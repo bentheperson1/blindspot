@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DEFAULT_API_URL, MILE } from './config';
-import type { TravelMode, Units, ViewMode } from './types';
+import type { Appearance, TravelMode, Units, ViewMode } from './types';
 
 export type Settings = {
   view: ViewMode;
@@ -9,6 +9,7 @@ export type Settings = {
   mode: TravelMode;
   units: Units;
   apiUrl: string;
+  appearance: Appearance;
 };
 
 const DEFAULTS: Settings = {
@@ -17,6 +18,7 @@ const DEFAULTS: Settings = {
   mode: 'pedestrian',
   units: 'imperial',
   apiUrl: DEFAULT_API_URL,
+  appearance: 'dark',
 };
 
 const KEY = 'flock.settings.v1';

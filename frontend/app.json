@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -16,7 +16,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1F1A16",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -35,7 +35,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Flock Finder uses the camera to show nearby surveillance cameras in AR."
+          "cameraPermission": "Flock Finder uses the camera to show nearby surveillance cameras in AR.",
+          "recordAudioAndroid": false
         }
       ],
       [
@@ -43,7 +44,16 @@
         {
           "locationWhenInUsePermission": "Flock Finder uses your location to find surveillance cameras near you."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
       ]
-    ]
+    ],
+    "backgroundColor": "#1F1A16"
   }
 }

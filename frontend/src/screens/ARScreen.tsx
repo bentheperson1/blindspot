@@ -1,12 +1,12 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { sendFrame, type FrameResult } from '../api';
+import { Animated, Easing, Image, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { buildPayload, sendFrame, type FrameResult } from '../api';
 import { FRAME_INTERVAL_MS, FRAME_JPEG_QUALITY, FRAME_WIDTH_PX } from '../config';
 import type { Telemetry } from '../sensors';
 import { useSettings } from '../settings';
-import { colors, radii } from '../theme';
+import { fonts, radii, useColors, useThemedStyles, type Palette } from '../theme';
 import type { BackendStatus, Detection } from '../types';
 
 /**
@@ -23,6 +23,8 @@ export function ARScreen({
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const { apiUrl, radius, mode } = useSettings();
+  const colors = useColors();
+  const styles = useThemedStyles(makeStyles);
   const { width, height } = useWindowDimensions();
   const camRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
@@ -35,6 +37,7 @@ export function ARScreen({
   settingsRef.current = { radius_m: radius, mode };
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [showOutputFull, setShowOutputFull] = useState(false);
+  const [waitingForSensors, setWaitingForSensors] = useState(false);
 
   const report = (s: BackendStatus) => {
     setStatus(s);
@@ -51,31 +54,34 @@ export function ARScreen({
       while (!stopped) {
         const started = Date.now();
         try {
-          // Timestamps taken right when the frame is captured.
+          // Sensor readings and timestamps are all taken at the moment of capture, so they line up with the frame.
+          const telemetry = snapshot();
           const monotonicMs = performance.now();
-          const ts = Date.now();
-          const shot = await camRef.current?.takePictureAsync({ quality: 0.5, shutterSound: false, skipProcessing: true });
-          if (shot && !stopped) {
-            const img = await ImageManipulator.manipulate(shot.uri).resize({ width: FRAME_WIDTH_PX }).renderAsync();
-            const small = await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
-            const res = await sendFrame(
-              apiUrl,
-              {
-                base64: small.base64 ?? '',
-                width: small.width,
-                height: small.height,
-                cameraWidth: shot.width,
-                cameraHeight: shot.height,
-                monotonicMs,
-                ts,
-              },
-              snapshot(),
-              settingsRef.current,
-            );
-            if (!stopped) {
-              setResult(res);
-              setLatencyMs(Date.now() - started);
-              report('ok');
+          const timestampSec = Date.now() / 1000;
+          // Don't spend a capture until GPS, compass and motion all have a reading.
+          if (!buildPayload(telemetry, null, { timestampSec, monotonicMs }, { platform: Platform.OS, settings: settingsRef.current })) {
+            if (!stopped) setWaitingForSensors(true);
+          } else {
+            if (!stopped) setWaitingForSensors(false);
+            // skipProcessing must stay off: with it on, many Android phones return sideways frames.
+            const shot = await camRef.current?.takePictureAsync({ quality: 0.5, shutterSound: false, skipProcessing: false });
+            if (shot && !stopped) {
+              const img = await ImageManipulator.manipulate(shot.uri).resize({ width: FRAME_WIDTH_PX }).renderAsync();
+              const small = await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
+              const payload = buildPayload(
+                telemetry,
+                { base64: small.base64 ?? '', width: small.width, height: small.height, cameraWidth: shot.width, cameraHeight: shot.height },
+                { timestampSec, monotonicMs },
+                { platform: Platform.OS, settings: settingsRef.current },
+              );
+              if (payload) {
+                const res = await sendFrame(apiUrl, payload);
+                if (!stopped) {
+                  setResult(res);
+                  setLatencyMs(Date.now() - started);
+                  report('ok');
+                }
+              }
             }
           }
         } catch {
@@ -119,7 +125,7 @@ export function ARScreen({
     return (
       <View style={[styles.fill, styles.center]}>
         <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permBody}>The detector looks at your camera feed to find surveillance cameras.</Text>
+        <Text style={styles.permBody}>Point your camera at poles and intersections. Each frame is checked for license plate cameras.</Text>
         <Pressable style={styles.permBtn} onPress={requestPermission}>
           <Text style={styles.permBtnText}>Allow camera</Text>
         </Pressable>
@@ -158,19 +164,29 @@ export function ARScreen({
 
       {/* Detector readout */}
       <View pointerEvents="none" style={styles.readout}>
-        <View style={[styles.dot, { backgroundColor: alerting ? colors.alert : STATUS_COLOR[status] }]} />
+        <View style={[styles.dot, { backgroundColor: alerting ? colors.alert : statusColor(colors, status) }]} />
         <Text style={styles.readoutText}>
-          {status === 'error'
-            ? 'Detector offline — check API URL in Settings'
+          {waitingForSensors
+            ? 'Waiting for GPS and compass…'
+            : status === 'error'
+            ? "Can't reach the server. Check the address in settings."
             : status === 'connecting'
-              ? 'Connecting to detector…'
+              ? 'Connecting to the server…'
               : result.message
                 ? result.message
                 : detections.length > 0
                   ? `${detections.length} detection${detections.length > 1 ? 's' : ''}`
-                  : 'Scanning…'}
+                  : 'Looking for cameras'}
         </Text>
         {latencyMs != null && status === 'ok' && <Text style={styles.latency}>{latencyMs} ms</Text>}
+      </View>
+
+      {/* Viewfinder corners mark the area the model sees. */}
+      <View pointerEvents="none" style={styles.finder}>
+        <View style={[styles.corner, styles.cTL, alerting && styles.cornerAlert]} />
+        <View style={[styles.corner, styles.cTR, alerting && styles.cornerAlert]} />
+        <View style={[styles.corner, styles.cBL, alerting && styles.cornerAlert]} />
+        <View style={[styles.corner, styles.cBR, alerting && styles.cornerAlert]} />
       </View>
 
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.vignette, { opacity: pulse }]} />
@@ -178,29 +194,26 @@ export function ARScreen({
   );
 }
 
-const STATUS_COLOR: Record<BackendStatus, string> = {
-  off: colors.textDim,
-  connecting: colors.warn,
-  ok: colors.accent,
-  error: colors.alert,
-};
+const statusColor = (c: Palette, s: BackendStatus) =>
+  ({ off: c.muted, connecting: c.accent, ok: c.tealText, error: c.alert })[s];
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#000' },
   center: { alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12, backgroundColor: colors.bg },
-  permTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  permBody: { color: colors.textDim, fontSize: 15, textAlign: 'center' },
-  permBtn: { backgroundColor: colors.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: radii.md, marginTop: 8 },
-  permBtnText: { color: '#06231F', fontWeight: '700', fontSize: 15 },
+  permTitle: { fontFamily: fonts.display, color: colors.text, fontSize: 26 },
+  permBody: { fontFamily: fonts.sans, color: colors.muted, fontSize: 16, lineHeight: 23, textAlign: 'center', maxWidth: 320 },
+  permBtn: { backgroundColor: colors.button, paddingHorizontal: 22, paddingVertical: 13, borderRadius: radii.card, marginTop: 8 },
+  permBtnText: { fontFamily: fonts.caps, color: colors.onButton, fontSize: 16 },
   detBox: { position: 'absolute', borderWidth: 3, borderColor: colors.alert, borderRadius: 6 },
   detLabel: {
     position: 'absolute',
     top: -22,
     left: -3,
     backgroundColor: colors.alert,
-    color: '#fff',
+    color: '#FBF5EC',
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: fonts.sansBold,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -213,27 +226,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(14,17,22,0.85)',
-    borderRadius: radii.lg,
+    backgroundColor: colors.glass,
+    borderRadius: radii.card,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
   },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  readoutText: { color: colors.text, fontSize: 14, fontWeight: '700' },
-  latency: { color: colors.textDim, fontSize: 12, fontVariant: ['tabular-nums'] },
+  readoutText: { fontFamily: fonts.sansSemi, color: colors.text, fontSize: 15, marginTop: 2 },
+  latency: { fontFamily: fonts.sans, color: colors.muted, fontSize: 13, marginTop: 2 },
   outputThumb: {
     position: 'absolute',
     top: 120,
     right: 16,
     width: 120,
     height: 160,
-    borderRadius: radii.md,
+    borderRadius: radii.card,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: colors.accent,
-    backgroundColor: '#000',
+    backgroundColor: colors.bg,
   },
   outputLabel: {
     position: 'absolute',
@@ -241,11 +254,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     textAlign: 'center',
-    backgroundColor: 'rgba(14,17,22,0.8)',
+    backgroundColor: colors.glass,
     color: colors.text,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fonts.sansSemi,
     paddingVertical: 3,
   },
-  vignette: { borderWidth: 28, borderColor: 'rgba(229,72,77,0.55)', borderRadius: 4 },
+  vignette: { borderWidth: 28, borderColor: 'rgba(255,90,114,0.5)' },
+  finder: { position: 'absolute', top: '22%', bottom: '28%', left: '12%', right: '12%' },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: '#F7E7D7', opacity: 0.9 },
+  cornerAlert: { borderColor: colors.alert, opacity: 1 },
+  cTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderTopLeftRadius: 6 },
+  cTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderTopRightRadius: 6 },
+  cBL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderBottomLeftRadius: 6 },
+  cBR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderBottomRightRadius: 6 },
 });

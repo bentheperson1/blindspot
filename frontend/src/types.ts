@@ -15,6 +15,7 @@ export type Camera = {
 export type TravelMode = 'pedestrian' | 'driver';
 export type Units = 'imperial' | 'metric';
 export type ViewMode = 'map' | 'ar';
+export type Appearance = 'dark' | 'light' | 'system';
 
 /** One object the model found in a frame. Box is normalized 0–1: [x, y, w, h]. */
 export type Detection = {
