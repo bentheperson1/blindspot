@@ -1,6 +1,6 @@
 from flask import Flask
 
-WS_URL = "ws://127.0.0.1:8000/images/stream"
+WS_URL = "wss://148-100-79-51.sslip.io/images/stream"
 
 app = Flask(__name__)
 

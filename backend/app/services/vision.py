@@ -50,9 +50,9 @@ def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> byt
 def process_image(image: np.ndarray) -> np.ndarray:
     # Replace this with your actual pipeline
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-   # edges = cv2.Canny(gray, 100, 200)
+    edges = cv2.Canny(gray, 100, 200)
 
-    return gray
+    return edges
 
 
 def process_bytes(data: bytes, quality: int = 90) -> bytes:
