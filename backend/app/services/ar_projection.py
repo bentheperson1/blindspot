@@ -1,5 +1,8 @@
 import math
 import numpy as np
+import pandas as pd
+from typing import List
+from ..schemas.vision import FlockCamera
 
 def geodetic_to_ecef(lat, lon, alt=0):
     a = 6378137.0
@@ -55,28 +58,34 @@ def get_rotation_matrix(yaw, pitch, roll):
     
     return R_roll.dot(R_pitch).dot(R_yaw)
 
-def project_to_screen(lat_p, lon_p, yaw, pitch, roll, lat_t, lon_t, screen_w=1080, screen_h=1920, hfov=60):
-    ecef_phone = geodetic_to_ecef(lat_p, lon_p)
-    ecef_target = geodetic_to_ecef(lat_t, lon_t)
-    
-    enu_coords = ecef_to_enu(ecef_target, ecef_phone, lat_p, lon_p)
-    
-    R_camera = get_rotation_matrix(yaw, pitch, roll)
-    camera_coords = R_camera.dot(enu_coords)
-    
-    xc, yc, zc = camera_coords
-    
-    if zc <= 0:
-        return None, "Target is behind the camera plane."
-    
-    fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
-    fy = fx 
-    cx, cy = screen_w / 2.0, screen_h / 2.0
-    
-    xs = (xc * fx / zc) + cx
-    ys = (yc * fy / zc) + cy
-    
-    if 0 <= xs <= screen_w and 0 <= ys <= screen_h:
-        return (round(xs, 2), round(ys, 2)), "Visible"
-    else:
-        return (round(xs, 2), round(ys, 2)), "Off-screen (But in front of camera view)"
+def project_to_screen(lat_p, lon_p, yaw, pitch, roll, flockCoordinates: List[FlockCamera], screen_w=1080, screen_h=1920, hfov=60):
+    results = []
+    for camera in flockCoordinates:
+        ecef_phone = geodetic_to_ecef(lat_p, lon_p)
+        ecef_target = geodetic_to_ecef(camera.latitude, camera.longitude)
+        
+        enu_coords = ecef_to_enu(ecef_target, ecef_phone, lat_p, lon_p)
+        
+        R_camera = get_rotation_matrix(yaw, pitch, roll)
+        camera_coords = R_camera.dot(enu_coords)
+        
+        xc, yc, zc = camera_coords
+        
+        if zc <= 0:
+            return None, "Target is behind the camera plane."
+        
+        fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
+        fy = fx 
+        cx, cy = screen_w / 2.0, screen_h / 2.0
+        
+        xs = (xc * fx / zc) + cx
+        ys = (yc * fy / zc) + cy
+        
+        results.append([camera.name, round(xs, 2), round(ys, 2)])
+        """
+        if 0 <= xs <= screen_w and 0 <= ys <= screen_h:
+            return (round(xs, 2), round(ys, 2)), "Visible"
+        else:
+            return (round(xs, 2), round(ys, 2)), "Off-screen (But in front of camera view)"
+        """
+    return results
