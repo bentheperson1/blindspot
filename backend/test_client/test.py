@@ -3,7 +3,7 @@ import websockets
 
 
 async def main():
-	url = "wss://148-100-79-51.sslip.io/images/stream"
+	url = "wss://11.32.6.184/images/stream"
 	headers = {"x-api-key": "YOUR_KEY"}
 	
 	async with websockets.connect(url, additional_headers=headers) as ws:

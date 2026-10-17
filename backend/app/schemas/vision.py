@@ -5,19 +5,11 @@ class ImageInfo(BaseModel):
     height: int
     channels: int
 
-
-class Base64ImageRequest(BaseModel):
-    image: str
-
-
-class Base64ImageResponse(BaseModel):
-    image: str
-
 class Location(BaseModel):
     latitude: float
     longitude: float
     altitude: float | None = None
-    accuracy: float  # meters
+    accuracy: float | None = None  # meters; Expo can report null
     altitudeAccuracy: float | None = None
     heading: float | None = None  # course of travel, -1 or null when not moving
     speed: float | None = None
@@ -25,9 +17,8 @@ class Location(BaseModel):
 
 class Compass(BaseModel):
     magHeading: float
-    trueHeading: float | None = None  # null if the device can't compute it
-    accuracy: float  # degrees
-
+    trueHeading: float | None = None  # -1 (iOS) or null when unavailable
+    accuracy: float | None = None  # calibration level 0-3, not degrees
 
 class Vec3(BaseModel):
     x: float
@@ -67,11 +58,30 @@ class UserMessage(BaseModel):
     ts: int  # unix ms, client clock
     monotonic_ms: float
 
-    location: Location
-    locationTimestamp: int  # unix ms of the GPS fix
+    location: Location | None = None  # null until the first GPS fix
+    locationTimestamp: int | None = None  # unix ms of the GPS fix
 
-    compass: Compass
+    compass: Compass | None = None  # null until the first heading reading
     motion: Motion | None = None
     magnetometer: Vec3 | None = None
 
     settings: Settings
+
+
+
+class Base64ImageRequest(BaseModel):
+    image: str
+
+class Telemetry(BaseModel):
+    ts: int
+    monotonic_ms: float
+    location: Location | None = None
+    locationTimestamp: int | None = None
+    compass: Compass | None = None
+    motion: Motion | None = None
+    magnetometer: Vec3 | None = None
+
+
+class Base64ImageResponse(BaseModel):
+    image: str
+    telemetry: Telemetry | None = None

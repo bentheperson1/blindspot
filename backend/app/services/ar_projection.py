@@ -67,7 +67,7 @@ def project_to_screen(lat_p, lon_p, yaw, pitch, roll, lat_t, lon_t, screen_w=108
     xc, yc, zc = camera_coords
     
     if zc <= 0:
-        return None, "Target is behind the camera plane."
+        return (None, None), "Target is behind the camera plane."
     
     fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
     fy = fx 
@@ -80,3 +80,11 @@ def project_to_screen(lat_p, lon_p, yaw, pitch, roll, lat_t, lon_t, screen_w=108
         return (round(xs, 2), round(ys, 2)), "Visible"
     else:
         return (round(xs, 2), round(ys, 2)), "Off-screen (But in front of camera view)"
+
+if __name__ == "__main__":
+    start_lat, start_lon = 32.9857, -96.7502
+    target_lat, target_lon = 32.9860, -96.7505
+    yaw, pitch, roll = 0, 0, 0
+    result, message = project_to_screen(start_lat, start_lon, yaw, pitch, roll, target_lat, target_lon)
+
+    print(f"Screen coordinates: {result}, Status: {message}")

@@ -9,6 +9,23 @@ import { useSettings } from '../settings';
 import { colors, radii } from '../theme';
 import type { BackendStatus, Detection } from '../types';
 
+// resize + encode in one place, releasing native objects so the loop doesn't accumulate memory
+async function shrink(uri: string) {
+  const context = ImageManipulator.manipulate(uri);
+
+  try {
+    const img = await context.resize({ width: FRAME_WIDTH_PX }).renderAsync();
+
+    try {
+      return await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
+    } finally {
+      img.release();
+    }
+  } finally {
+    context.release();
+  }
+}
+
 /**
  * AR view: a thin client for the backend model.
  * Each tick it sends a base64 frame + raw GPS + raw rotation/motion sensors,
@@ -36,9 +53,20 @@ export function ARScreen({
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [showOutputFull, setShowOutputFull] = useState(false);
 
+  // Latest props in refs: the frame loop effect only re-runs on [ready, apiUrl],
+  // so without these it would keep calling whichever versions existed on first mount.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+
+  const onBackendStatusRef = useRef(onBackendStatus);
+  onBackendStatusRef.current = onBackendStatus;
+
+  // Size of the frame we last sent, used to map detection boxes onto the screen.
+  const frameSizeRef = useRef<{ w: number; h: number } | null>(null);
+
   const report = (s: BackendStatus) => {
     setStatus(s);
-    onBackendStatus(s);
+    onBackendStatusRef.current(s);
   };
 
   // ---- Frame loop: capture -> shrink -> model -> draw ----
@@ -50,18 +78,26 @@ export function ARScreen({
     (async () => {
       while (!stopped) {
         const started = Date.now();
+
         try {
-          // Timestamps taken right when the frame is captured.
+          // Clocks and sensors are read together, right before the shutter, so they line up with the frame.
           const monotonicMs = performance.now();
           const ts = Date.now();
+          const telemetry = snapshotRef.current();
+
           const shot = await camRef.current?.takePictureAsync({ quality: 0.5, shutterSound: false, skipProcessing: true });
+
           if (shot && !stopped) {
-            const img = await ImageManipulator.manipulate(shot.uri).resize({ width: FRAME_WIDTH_PX }).renderAsync();
-            const small = await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
+            const small = await shrink(shot.uri);
+
+            if (!small.base64) {
+              throw new Error('encode failed');
+            }
+
             const res = await sendFrame(
               apiUrl,
               {
-                base64: small.base64 ?? '',
+                base64: small.base64,
                 width: small.width,
                 height: small.height,
                 cameraWidth: shot.width,
@@ -69,10 +105,12 @@ export function ARScreen({
                 monotonicMs,
                 ts,
               },
-              snapshot(),
+              telemetry,
               settingsRef.current,
             );
+
             if (!stopped) {
+              frameSizeRef.current = { w: small.width, h: small.height };
               setResult(res);
               setLatencyMs(Date.now() - started);
               report('ok');
@@ -84,6 +122,7 @@ export function ARScreen({
             report('error');
           }
         }
+
         const wait = Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started));
         await new Promise((r) => setTimeout(r, wait));
       }
@@ -91,7 +130,7 @@ export function ARScreen({
 
     return () => {
       stopped = true;
-      onBackendStatus('off');
+      onBackendStatusRef.current('off');
     };
   }, [ready, apiUrl]);
 
@@ -127,6 +166,13 @@ export function ARScreen({
     );
   }
 
+  // Map normalized frame coordinates onto the screen using the same cover-fit the preview uses.
+  const fs = frameSizeRef.current;
+  const scale = fs ? Math.max(width / fs.w, height / fs.h) : 1;
+  const fit = fs
+    ? { w: fs.w * scale, h: fs.h * scale, x: (width - fs.w * scale) / 2, y: (height - fs.h * scale) / 2 }
+    : null;
+
   return (
     <View style={styles.fill}>
       <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} animateShutter={false} />
@@ -144,17 +190,26 @@ export function ARScreen({
       ) : null}
 
       {/* Model detections. Boxes are normalized 0–1 relative to the frame. */}
-      {detections.map((d, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={[styles.detBox, { left: d.box[0] * width, top: d.box[1] * height, width: d.box[2] * width, height: d.box[3] * height }]}
-        >
-          <Text style={styles.detLabel}>
-            {d.label} {Math.round(d.confidence * 100)}%
-          </Text>
-        </View>
-      ))}
+      {fit &&
+        detections.map((d, i) => (
+          <View
+            key={i}
+            pointerEvents="none"
+            style={[
+              styles.detBox,
+              {
+                left: fit.x + d.box[0] * fit.w,
+                top: fit.y + d.box[1] * fit.h,
+                width: d.box[2] * fit.w,
+                height: d.box[3] * fit.h,
+              },
+            ]}
+          >
+            <Text style={styles.detLabel}>
+              {d.label} {Math.round(d.confidence * 100)}%
+            </Text>
+          </View>
+        ))}
 
       {/* Detector readout */}
       <View pointerEvents="none" style={styles.readout}>

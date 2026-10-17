@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile, WebSoc
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, ImageInfo
+from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
 from app.services import vision
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -29,15 +29,21 @@ async def process_upload(file: UploadFile = File(...)):
 
 
 @router.post("/process-base64", response_model=Base64ImageResponse)
-async def process_base64(payload: Base64ImageRequest):
+async def process_base64(payload: UserMessage):
+    telemetry = Telemetry.model_validate(payload.model_dump(include=set(Telemetry.model_fields)))
+
     try:
         data = vision.decode_base64(payload.image)
         check_size(data)
-        encoded = await run_in_threadpool(vision.process_bytes, data, settings.jpeg_quality)
+        encoded = await run_in_threadpool(vision.process_sent_data, data, telemetry, settings.jpeg_quality)
     except vision.InvalidImageError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return Base64ImageResponse(image=base64.b64encode(encoded).decode("ascii"))
+
+    return Base64ImageResponse(
+        image=base64.b64encode(encoded).decode("ascii"),
+        telemetry=telemetry,
+    )
 
 
 @router.post("/info", response_model=ImageInfo)
@@ -54,6 +60,10 @@ async def image_info(file: UploadFile = File(...)):
 
     return ImageInfo(width=width, height=height, channels=channels)
 
+@router.post("/augmented_test", response_model=UserMessage)
+async def augmented_test(payload: UserMessage):
+    print(payload)
+    return payload
 
 @router.websocket("/stream")
 async def stream_images(websocket: WebSocket):
