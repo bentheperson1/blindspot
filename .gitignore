@@ -47,3 +47,4 @@ __pycache__/
 *.heic
 osm_cache/
 .env
+backend/firebase-key.json
