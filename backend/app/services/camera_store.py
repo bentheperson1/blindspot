@@ -58,16 +58,23 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def all_cameras() -> list[FlockCamera]:
-    with _lock: 
+    with _lock:
         if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
+            # Firebase is optional and connected lazily. If it isn't available, serve whatever
+            # is cached (possibly empty) instead of crashing; _get_db() won't retry once it has
+            # recorded a reason, so this stays cheap.
+            try:
+                db = _get_db()
+            except CameraStoreUnavailable:
+                return _cache["cameras"]
             cameras = []
-            for doc in _db.collection("cameras").stream():
+            for doc in db.collection("cameras").stream():
                 try:
                     cameras.append(FlockCamera.model_validate(doc.to_dict()))
                 except ValidationError:
                     continue
             _cache.update(cameras=cameras, loaded_at=time.time())
-            print(f"Loaded {len(cameras)} cameras")  # was print(cameras)
+            logger.info("Loaded %d cameras", len(cameras))
     return _cache["cameras"]
 
 

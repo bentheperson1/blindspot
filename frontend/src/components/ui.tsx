@@ -238,13 +238,14 @@ export function LogoMark({ size, label }: { size: number; label?: string }) {
   );
 }
 
-export type Tab = "map" | "ar" | "settings";
+export type Tab = "map" | "ar" | "classify" | "settings";
 
 export const TAB_BAR_H = 62;
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: "map", label: "Map", icon: "map" },
   { key: "ar", label: "Camera", icon: "camera" },
+  { key: "classify", label: "Report", icon: "aperture" },
   { key: "settings", label: "Settings", icon: "settings" },
 ];
 

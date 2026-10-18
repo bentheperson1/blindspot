@@ -62,7 +62,6 @@ def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> byt
 
 
 
-
 def process_sent_data(flock_cameras: list[FlockCamera], source_width: int, source_height: int, telemetry: Telemetry) -> list | None:
     w = source_width
     h = source_height

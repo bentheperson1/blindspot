@@ -68,7 +68,8 @@ class Dot(BaseModel):
 class Base64ImageResponse(BaseModel):
     telemetry: Telemetry | None = None
     dots: list[Dot] = []
-    
+
+
 class FlockCamera(BaseModel):
     name: str
     latitude: float
