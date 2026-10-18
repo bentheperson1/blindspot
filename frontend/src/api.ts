@@ -266,11 +266,14 @@ const pickNum = (o: Record<string, unknown>, keys: string[]): number | null => {
  * The backend (project_to_screen) returns a list of { name, x, y, distance_to_user } with x/y as 0–1 fractions
  * of the screen. Off-screen entries and nulls (e.g. its [None, None] when a camera is behind you) are skipped.
  */
+// The first /cameras/nearby call can be slow while the backend loads every camera from Firestore.
+export const NEARBY_TIMEOUT_MS = 15000;
+
 export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): Promise<ScreenCamera[]> {
   const res = await request(
     `${base(apiUrl)}${PATHS.nearby}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
-    5000,
+    NEARBY_TIMEOUT_MS,
   );
   const json = (await res.json()) as unknown;
   const list = Array.isArray(json) ? json : Array.isArray((json as { cameras?: unknown })?.cameras) ? (json as { cameras: unknown[] }).cameras : [];

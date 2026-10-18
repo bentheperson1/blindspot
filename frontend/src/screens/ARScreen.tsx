@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import {
+  NEARBY_TIMEOUT_MS,
   buildNearbyRequest,
   buildPayload,
   fetchNearbyOnScreen,
@@ -36,6 +37,7 @@ import type { BackendStatus, Detection } from "../types";
 const CAMERA_ZOOM = 0;
 // How often to ask /cameras/nearby where cameras are on screen. Only sensor data is sent, so it can run faster than frames.
 const NEARBY_INTERVAL_MS = 500;
+const NEARBY_RETRY_AFTER_FAIL_MS = 10000;
 
 /**
  * AR view: a thin client for the backend model.
@@ -91,6 +93,7 @@ export function ARScreen({
     (async () => {
       while (!stopped) {
         const started = Date.now();
+        let waitMs = NEARBY_INTERVAL_MS;
         try {
           // Sensor readings and timestamps are all taken at the moment of capture, so they line up with the frame.
           const telemetry = snapshot();
@@ -151,13 +154,16 @@ export function ARScreen({
             }
           }
         } catch {
+          waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
             setResult({ detections: [] });
             report("error");
           }
         }
         const wait = Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started));
-        await new Promise((r) => setTimeout(r, wait));
+        await new Promise((r) =>
+          setTimeout(r, Math.max(0, waitMs - (Date.now() - started))),
+        );
       }
     })();
 
@@ -197,9 +203,11 @@ export function ARScreen({
             setOnScreen([]);
             const msg = e instanceof Error ? e.message : String(e);
             setNearbyError(
-              msg.includes("Aborted") || msg.includes("abort")
-                ? "timed out (no reply in 5 s)"
-                : msg,
+              /abort|cancel/i.test(msg)
+                ? `no reply in ${NEARBY_TIMEOUT_MS / 1000} s. The server is reachable but /cameras/nearby is too slow or stuck.`
+                : /network request failed|could not connect|offline/i.test(msg)
+                  ? "can't connect to the server address in Settings."
+                  : msg,
             );
           }
         }

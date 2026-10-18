@@ -2,6 +2,7 @@
 import math
 import os
 import time
+import threading
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -20,6 +21,8 @@ if not firebase_admin._apps:
 _db = firestore.client()
 _cache: dict = {"cameras": [], "loaded_at": 0.0}
 
+_lock = threading.Lock()
+
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -31,16 +34,16 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def all_cameras() -> list[FlockCamera]:
-    if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
-        cameras = []
-        for doc in _db.collection("flock_cameras").stream():
-            try:
-                cameras.append(FlockCamera.model_validate(doc.to_dict()))
-            except ValidationError:
-                continue
-        _cache.update(cameras=cameras, loaded_at=time.time())
-
-        print(cameras)
+    with _lock: 
+        if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
+            cameras = []
+            for doc in _db.collection("flock_cameras").stream():
+                try:
+                    cameras.append(FlockCamera.model_validate(doc.to_dict()))
+                except ValidationError:
+                    continue
+            _cache.update(cameras=cameras, loaded_at=time.time())
+            print(f"Loaded {len(cameras)} cameras")  # was print(cameras)
     return _cache["cameras"]
 
 
