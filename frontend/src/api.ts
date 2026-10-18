@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import type { Telemetry } from './sensors';
 import type { Camera, Detection, TravelMode } from './types';
 
@@ -58,6 +59,7 @@ type UserMessageFields = {
 // Backend URL paths.
 export const PATHS = {
   frame: '/images/process-base64',
+  classify: '/classify', // backend: app/api/routes/classify.py, multipart field "file"
   health: '/health',
   cameras: '/cameras',
   nearby: '/cameras/nearby', // backend: app/api/routes/cameras.py -> nearby(info: LocationInputInfo)
@@ -194,6 +196,42 @@ export async function sendFrame(apiUrl: string, payload: FramePayload): Promise<
   const json = (await res.json()) as Partial<FrameResult> & Record<string, unknown>;
   const dots = Array.isArray((json as { dots?: unknown }).dots) ? ((json as { dots: FrameDot[] }).dots) : [];
   return { image: json.image, detections: json.detections ?? [], dots, alert: json.alert, message: json.message };
+}
+
+/** Flock camera classifier verdict for one photo, from POST /classify. */
+export type Verdict = 'camera' | 'not_camera' | 'unsure_retake';
+
+export type ClassifyResult = {
+  verdict: Verdict;
+  camera_probability: number; // 0–1
+  latency_ms: number; // time the model took on the server
+};
+
+export const CLASSIFY_TIMEOUT_MS = 15000;
+
+/** Uploads one JPEG (a local file uri) to POST /classify as multipart form-data and returns the verdict. */
+export async function classifyPhoto(apiUrl: string, uri: string): Promise<ClassifyResult> {
+  const form = new FormData();
+  if (Platform.OS === 'web') {
+    form.append('file', await (await fetch(uri)).blob(), 'photo.jpg');
+  } else {
+    // React Native's FormData takes a { uri, name, type } file reference instead of a Blob.
+    form.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' } as unknown as Blob);
+  }
+  // No Content-Type header: fetch sets multipart/form-data with the boundary itself.
+  const res = await request(`${base(apiUrl)}${PATHS.classify}`, { method: 'POST', body: form }, CLASSIFY_TIMEOUT_MS);
+  const json = (await res.json()) as Record<string, unknown>;
+  const verdict = json.verdict;
+  // The backend sends the probability as `probability`; accept `camera_probability` too (model/predict.py's name).
+  const p = json.camera_probability ?? json.probability;
+  if (verdict !== 'camera' && verdict !== 'not_camera' && verdict !== 'unsure_retake') {
+    throw new Error(`Unexpected verdict from /classify: ${String(verdict)}`);
+  }
+  return {
+    verdict,
+    camera_probability: typeof p === 'number' ? p : 0,
+    latency_ms: typeof json.latency_ms === 'number' ? json.latency_ms : 0,
+  };
 }
 
 /**
