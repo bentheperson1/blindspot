@@ -59,6 +59,8 @@ type UserMessageFields = {
 // Backend URL paths.
 export const PATHS = {
   frame: '/images/process-base64',
+  classify: '/classify', // backend: app/api/routes/classify.py, multipart field "file"
+  classifyBase64: '/classify-base64', // backend: same file, JSON { image: <base64> } (used by the app)
   health: '/health',
   cameras: '/cameras',
   nearby: '/cameras/nearby', // backend: app/api/routes/cameras.py -> nearby(info: LocationInputInfo)
@@ -195,6 +197,42 @@ export async function sendFrame(apiUrl: string, payload: FramePayload): Promise<
   const json = (await res.json()) as Partial<FrameResult> & Record<string, unknown>;
   const dots = Array.isArray((json as { dots?: unknown }).dots) ? ((json as { dots: FrameDot[] }).dots) : [];
   return { image: json.image, detections: json.detections ?? [], dots, alert: json.alert, message: json.message };
+}
+
+/** Flock camera classifier verdict for one photo, from POST /classify. */
+export type Verdict = 'camera' | 'not_camera' | 'unsure_retake';
+
+export type ClassifyResult = {
+  verdict: Verdict;
+  camera_probability: number; // 0�1
+  latency_ms: number; // time the model took on the server
+};
+
+export const CLASSIFY_TIMEOUT_MS = 15000;
+
+/**
+ * Sends one JPEG (base64, no data: prefix) to POST /classify-base64 as JSON and returns the verdict.
+ * JSON instead of multipart: Expo's fetch rejects React Native's { uri, name, type } FormData
+ * parts ("Unsupported FormDataPart implementation"), while JSON bodies already work for the frame loop.
+ */
+export async function classifyPhoto(apiUrl: string, base64: string): Promise<ClassifyResult> {
+  const res = await request(
+    `${base(apiUrl)}${PATHS.classifyBase64}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: base64 }) },
+    CLASSIFY_TIMEOUT_MS,
+  );
+  const json = (await res.json()) as Record<string, unknown>;
+  const verdict = json.verdict;
+  // The backend sends the probability as `probability`; accept `camera_probability` too (model/predict.py's name).
+  const p = json.camera_probability ?? json.probability;
+  if (verdict !== 'camera' && verdict !== 'not_camera' && verdict !== 'unsure_retake') {
+    throw new Error(`Unexpected verdict from /classify: ${String(verdict)}`);
+  }
+  return {
+    verdict,
+    camera_probability: typeof p === 'number' ? p : 0,
+    latency_ms: typeof json.latency_ms === 'number' ? json.latency_ms : 0,
+  };
 }
 
 /**

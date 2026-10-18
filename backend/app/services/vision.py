@@ -1,7 +1,6 @@
 import base64
 import binascii
 
-import cv2
 import numpy as np
 
 import math
@@ -32,6 +31,8 @@ def decode_base64(data: str) -> bytes:
 
 
 def decode_image(data: bytes) -> np.ndarray:
+	import cv2  # lazy: OpenCV isn't installed on the s390x server
+
 	if not data:
 		raise InvalidImageError("Empty image data")
 
@@ -45,6 +46,8 @@ def decode_image(data: bytes) -> np.ndarray:
 
 
 def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> bytes:
+	import cv2  # lazy: OpenCV isn't installed on the s390x server
+
 	params = []
 
 	if ext in (".jpg", ".jpeg"):

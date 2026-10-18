@@ -8,6 +8,8 @@ import { useSettings } from "./settings";
  *   #EEEBDA vanilla cream   -> ground (light) / text and primary buttons (dark)
  *   #B71947 logo red        -> small highlights only: "in view", selected controls, search radius,
  *                              slider thumb, sheet handle, section labels, serif accent words
+ * Two extra signal colors exist only for the snapshot verdict: `clear` (green, "not a camera")
+ * and `caution` (amber, "not sure").
  * Layout is deliberately plain: flat cards, thin borders, one sans font, labeled controls.
  */
 export type Palette = {
@@ -26,6 +28,10 @@ export type Palette = {
   onPrimary: string;
   alert: string; // "in view" (blue)
   onAlert: string;
+  clear: string; // snapshot verdict "not a camera" (green)
+  onClear: string;
+  caution: string; // snapshot verdict "not sure" (amber)
+  onCaution: string;
   peach: string; // tinted tiles
   sage: string; // "clear" tiles and chips (green)
   lilac: string;
@@ -54,6 +60,10 @@ const light: Palette = {
   onPrimary: "#EEEBDA",
   alert: "#B71947", // logo red
   onAlert: "#EEEBDA",
+  clear: "#2F6B47",
+  onClear: "#EEEBDA",
+  caution: "#D9961A",
+  onCaution: "#282B4A",
   peach: "#D6D4C9", // cream, 12% toward indigo
   sage: "#C2C1BA", // cream, 22% toward indigo
   lilac: "#E4C5C0", // logo red, 82% toward cream
@@ -82,6 +92,10 @@ const dark: Palette = {
   onPrimary: "#282B4A",
   alert: "#B71947", // logo red
   onAlert: "#EEEBDA",
+  clear: "#3B8A5C",
+  onClear: "#EEEBDA",
+  caution: "#E0A030",
+  onCaution: "#282B4A",
   peach: "#4A4C62", // indigo, 17% toward cream
   sage: "#5F6172", // indigo, 28% toward cream
   lilac: "#772148", // indigo, 55% toward logo red

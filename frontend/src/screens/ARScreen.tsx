@@ -2,6 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   Pressable,
@@ -15,10 +16,12 @@ import {
   NoListEndpoint,
   buildNearbyRequest,
   buildPayload,
+  classifyPhoto,
   fetchCameraList,
   fetchNearbyOnScreen,
   lensFromExif,
   sendFrame,
+  type ClassifyResult,
   type FrameResult,
   type LensInfo,
   type ScreenCamera,
@@ -47,8 +50,37 @@ import {
 } from "../config";
 import type { Telemetry } from "../sensors";
 import { useSettings } from "../settings";
-import { BORDER, fonts, radii, useThemedStyles, type Palette } from "../theme";
+import {
+  BORDER,
+  fonts,
+  radii,
+  useColors,
+  useThemedStyles,
+  type Palette,
+} from "../theme";
 import type { BackendStatus, Detection } from "../types";
+
+/**
+ * Snapshot flow: one photo -> POST /classify -> verdict card over the frozen photo.
+ * `uri` is null until the photo has been taken and resized.
+ */
+type Snapshot =
+  | { phase: "checking"; uri: string | null }
+  | { phase: "result"; uri: string; result: ClassifyResult }
+  | { phase: "error"; uri: string | null; message: string };
+
+const VERDICT_UI: Record<
+  ClassifyResult["verdict"],
+  { chip: string; tone: "alert" | "clear" | "caution"; title: string }
+> = {
+  camera: { chip: "Detected", tone: "alert", title: "Flock camera detected" },
+  not_camera: { chip: "Clear", tone: "clear", title: "Not a Flock camera" },
+  unsure_retake: {
+    chip: "Unsure",
+    tone: "caution",
+    title: "Not sure. Try a closer, clearer photo.",
+  },
+};
 
 const PIN_SMOOTH_MS = 65;
 // Fixed at no zoom so the focal length doesn't change under the backend. Sent with every frame in `extra.lens`.
@@ -138,6 +170,14 @@ export function ARScreen({
   const shownDistRef = useRef<Map<number, number>>(new Map());
   const viewRef = useRef({ width, height });
   viewRef.current = { width, height };
+  const c = useColors();
+
+  // Snapshot state. While a snapshot is being taken or its card is open, the frame loop is paused
+  // (pausedRef), and the snapshot waits for any frame capture already in flight (captureRef) so the
+  // two never call takePictureAsync at the same time.
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const pausedRef = useRef(false);
+  const captureRef = useRef<Promise<unknown> | null>(null);
 
   const pinTargetsRef = useRef<ScreenCamera[]>([]);
   const shownPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -155,6 +195,10 @@ export function ARScreen({
 
     (async () => {
       while (!stopped) {
+        if (pausedRef.current) {
+          await new Promise((r) => setTimeout(r, 250));
+          continue;
+        }
         const started = Date.now();
         try {
           // Sensor readings and timestamps are all taken at the moment of capture, so they line up with the frame.
@@ -175,12 +219,14 @@ export function ARScreen({
             if (!stopped) setWaitingForSensors(false);
             // skipProcessing must stay off: with it on, many Android phones return sideways frames.
             // exif: true returns this photo's focal length; the resize below strips EXIF, so it's sent as `extra.lens`.
-            const shot = await camRef.current?.takePictureAsync({
+            const capture = camRef.current?.takePictureAsync({
               quality: 0.5,
               shutterSound: false,
               skipProcessing: false,
               exif: true,
             });
+            captureRef.current = capture ?? null;
+            const shot = await capture;
             if (shot && !stopped) {
               const img = await ImageManipulator.manipulate(shot.uri)
                 .resize({ width: FRAME_WIDTH_PX })
@@ -479,7 +525,64 @@ export function ARScreen({
     };
   }, [ready, apiUrl, useLegacyNearby]);
 
-  // ---- Alert: backend decides via `alert`; if it omits it, any detection counts ----
+  // ---- Snapshot: one photo -> /classify -> verdict card ----
+  const takeSnapshot = async () => {
+    if (snap || !ready) return;
+    pausedRef.current = true;
+    setSnap({ phase: "checking", uri: null });
+    let uri: string;
+    let base64: string;
+    try {
+      await captureRef.current?.catch(() => {});
+      const shot = await camRef.current?.takePictureAsync({
+        quality: 0.5,
+        skipProcessing: false,
+      });
+      if (!shot) throw new Error("no photo");
+      const img = await ImageManipulator.manipulate(shot.uri)
+        .resize({ width: FRAME_WIDTH_PX })
+        .renderAsync();
+      const photo = await img.saveAsync({
+        compress: FRAME_JPEG_QUALITY,
+        format: SaveFormat.JPEG,
+        base64: true,
+      });
+      if (!photo.base64) throw new Error("no base64");
+      uri = photo.uri;
+      base64 = photo.base64;
+    } catch {
+      setSnap({
+        phase: "error",
+        uri: null,
+        message: "Couldn't take the photo. Try again.",
+      });
+      return;
+    }
+    setSnap({ phase: "checking", uri });
+    try {
+      setSnap({
+        phase: "result",
+        uri,
+        result: await classifyPhoto(apiUrl, base64),
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      console.log("[snapshot] /classify failed", `${apiUrl}/classify-base64`, detail);
+      setSnap({
+        phase: "error",
+        uri,
+        message: `Couldn't reach the detector (${detail}) at ${apiUrl}/classify-base64`,
+      });
+    }
+  };
+
+  const dismissSnapshot = () => {
+    setSnap(null);
+    pausedRef.current = false;
+  };
+
+  // ---- Alert: a camera is in view when the backend places one on screen ----
+  // The frame loop no longer carries the classifier's verdict; that's the snapshot card's job.
   // Cameras the frame endpoint placed (dots, 0–1 in the camera view), drawn the same way as /cameras/nearby ones.
   const frameDots: ScreenCamera[] = (result.dots ?? [])
     .filter((d) => d.x >= 0 && d.x <= 1 && d.y >= 0 && d.y <= 1)
@@ -490,10 +593,8 @@ export function ARScreen({
       label: d.name,
       distance_m: d.distance_to_user,
     }));
-  // Markers come from the cached list (updated 10×/s). The photo upload's dots arrive only every few seconds,
-  // so showing them made stale rings freeze on screen; use them only on the old /cameras/nearby fallback.
-  const pins = onScreen.length > 0 || !useLegacyNearby ? onScreen : frameDots;
-  const alerting = (result.alert ?? detections.length > 0) || pins.length > 0;
+  const pins = onScreen.length > 0 ? onScreen : frameDots;
+  const alerting = detections.length > 0 || pins.length > 0;
 
   if (!permission) return <View style={styles.fill} />;
   if (!permission.granted) {
@@ -549,10 +650,9 @@ export function ARScreen({
     ? `Trying ${apiUrl}. If that isn't the backend's address, fix it in Settings.`
     : waitingForSensors
       ? "Waiting for GPS and the compass. Hold the phone up and move it in a figure-8."
-      : (result.message ??
-        (alerting
-          ? "A license-plate camera is in frame."
-          : "Point the camera at poles and intersections."));
+      : alerting
+        ? "A license-plate camera is in frame."
+        : "Point at a pole-mounted camera and tap the shutter to check it.";
 
   return (
     <View style={styles.fill}>
@@ -661,24 +761,120 @@ export function ARScreen({
         </Pressable>
       ) : null}
 
-      {/* Bottom panel, just above the tab bar */}
-      <View style={[styles.bottomCard, { bottom: bottomInset }]}>
-        <Text style={styles.headline}>{headline}</Text>
-        <Text style={styles.body}>{body}</Text>
-        {result.image ? (
-          <Button
-            label={showOutputFull ? "Show camera" : "Show model output"}
-            variant="secondary"
-            onPress={() => setShowOutputFull((v) => !v)}
-          />
-        ) : null}
-        {latencyMs != null && status === "ok" && (
-          <Text style={styles.foot}>Last frame checked in {latencyMs} ms</Text>
-        )}
+      {/* Shutter + bottom panel, just above the tab bar */}
+      <View style={[styles.bottomDock, { bottom: bottomInset }]}>
+        <View style={styles.shutterRow}>
+          <Pressable
+            onPress={takeSnapshot}
+            disabled={!ready || snap != null}
+            accessibilityRole="button"
+            accessibilityLabel="Take a photo and check it for a Flock camera"
+            accessibilityState={{ disabled: !ready || snap != null }}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.shutter,
+              (pressed || !ready) && { opacity: 0.6 },
+            ]}
+          >
+            <View style={styles.shutterInner} />
+          </Pressable>
+        </View>
+        <View style={styles.bottomCard}>
+          <Text style={styles.headline}>{headline}</Text>
+          <Text style={styles.body}>{body}</Text>
+          {result.image ? (
+            <Button
+              label={showOutputFull ? "Show camera" : "Show model output"}
+              variant="secondary"
+              onPress={() => setShowOutputFull((v) => !v)}
+            />
+          ) : null}
+          {latencyMs != null && status === "ok" && (
+            <Text style={styles.foot}>
+              Last frame checked in {latencyMs} ms
+            </Text>
+          )}
+        </View>
       </View>
+
+      {/* Snapshot: the frozen photo with the verdict card on top. Covers the live view and its pins. */}
+      {snap && (
+        <View style={[StyleSheet.absoluteFill, styles.snapBackdrop]}>
+          {snap.uri && (
+            <Image
+              source={{ uri: snap.uri }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              accessibilityLabel="The photo you took"
+            />
+          )}
+          {snap.phase === "result" && (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                styles.snapBorder,
+                { borderColor: c[VERDICT_UI[snap.result.verdict].tone] },
+              ]}
+            />
+          )}
+          <FramedCard style={[styles.snapCard, { bottom: bottomInset + 16 }]}>
+            {snap.phase === "checking" && (
+              <View
+                style={styles.snapChecking}
+                accessibilityLiveRegion="polite"
+              >
+                <ActivityIndicator color={c.ink} />
+                <Text style={styles.snapTitle}>Checking…</Text>
+              </View>
+            )}
+            {snap.phase === "result" && (
+              <View accessibilityLiveRegion="polite" style={styles.snapBody}>
+                <Chip
+                  label={VERDICT_UI[snap.result.verdict].chip}
+                  tone={VERDICT_UI[snap.result.verdict].tone}
+                />
+                <Text
+                  style={[
+                    styles.snapTitle,
+                    snap.result.verdict === "camera" && { color: c.alert },
+                  ]}
+                >
+                  {VERDICT_UI[snap.result.verdict].title}
+                </Text>
+                {snap.result.verdict === "camera" && (
+                  <Text style={styles.snapProb}>
+                    {Math.round(snap.result.camera_probability * 100)}%
+                    confidence
+                  </Text>
+                )}
+                <Text style={styles.foot}>
+                  {Math.round(snap.result.latency_ms)} ms · Analyzed on IBM
+                  LinuxONE
+                </Text>
+              </View>
+            )}
+            {snap.phase === "error" && (
+              <View accessibilityLiveRegion="polite" style={styles.snapBody}>
+                <Chip label="Error" tone="surface" />
+                <Text style={styles.snapTitle}>{snap.message}</Text>
+              </View>
+            )}
+            {snap.phase !== "checking" && (
+              <Button
+                label="Take another"
+                icon="camera"
+                onPress={dismissSnapshot}
+              />
+            )}
+          </FramedCard>
+        </View>
+      )}
     </View>
   );
 }
+
+const SHUTTER = 76;
 
 const PIN = 44;
 
@@ -779,10 +975,40 @@ const makeStyles = (c: Palette) =>
       fontFamily: fonts.sansBold,
       paddingVertical: 4,
     },
-    bottomCard: {
+    bottomDock: { position: "absolute", left: 0, right: 0 },
+    shutterRow: { alignItems: "center", paddingBottom: 14 },
+    shutter: {
+      width: SHUTTER,
+      height: SHUTTER,
+      borderRadius: SHUTTER / 2,
+      borderWidth: 4,
+      borderColor: c.paper,
+      backgroundColor: "rgba(40,43,74,0.35)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    shutterInner: {
+      width: SHUTTER - 18,
+      height: SHUTTER - 18,
+      borderRadius: (SHUTTER - 18) / 2,
+      backgroundColor: c.paper,
+      borderWidth: BORDER,
+      borderColor: c.outline,
+    },
+    snapBackdrop: { backgroundColor: "#282B4A" },
+    snapBorder: { borderWidth: 8 },
+    snapCard: {
       position: "absolute",
-      left: 0,
-      right: 0,
+      left: 16,
+      right: 16,
+      padding: 16,
+      gap: 14,
+    },
+    snapBody: { gap: 8 },
+    snapChecking: { flexDirection: "row", alignItems: "center", gap: 10 },
+    snapTitle: { fontFamily: fonts.heading, fontSize: 20, color: c.ink },
+    snapProb: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
+    bottomCard: {
       backgroundColor: c.paper,
       borderTopWidth: BORDER,
       borderTopColor: c.outline,
