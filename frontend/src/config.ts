@@ -1,7 +1,7 @@
 // Central config. Change API_URL to wherever the FastAPI server runs.
 // On a physical phone, "localhost" is the phone itself — use your laptop's LAN IP
 // (e.g. http://192.168.1.20:8000) or the LinuxONE server's public IP.
-export const DEFAULT_API_URL = 'http://172.20.10.4:8000';
+export const DEFAULT_API_URL = 'http://11.24.6.248:8000';
 
 // Where the map opens before GPS arrives.
 export const UTD_CENTER = { latitude: 32.9857, longitude: -96.7502 };
