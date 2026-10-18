@@ -40,7 +40,7 @@ export function NearbySheet({
       ? "Can't reach the server"
       : !nearest
         ? "No cameras nearby"
-        : (nearest.name ?? "Nearest camera");
+        : (`Closest camera: ${nearest.latitude}, ${nearest.longitude}` ?? "Closest camera");
 
   return (
     <View
@@ -71,7 +71,7 @@ export function NearbySheet({
       <View style={s.tiles}>
         <Tile value={String(cameras.length)} label="In range" />
         <Tile value={mode === "driver" ? "Driving" : "Walking"} label="Mode" />
-        <Tile value={SERVER_LABEL[backend]} label="Server" />
+        <Tile value={SERVER_LABEL[backend]} label="Server Status" />
       </View>
 
       <View style={s.sliderBox}>
