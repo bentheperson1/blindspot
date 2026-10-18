@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import type { CachedCamera } from './projection';
 import type { Telemetry } from './sensors';
 import type { Camera, Detection, TravelMode } from './types';
 
@@ -204,7 +204,7 @@ export type Verdict = 'camera' | 'not_camera' | 'unsure_retake';
 
 export type ClassifyResult = {
   verdict: Verdict;
-  camera_probability: number; // 0�1
+  camera_probability: number; // 0�1
   latency_ms: number; // time the model took on the server
 };
 
@@ -308,36 +308,114 @@ const pickNum = (o: Record<string, unknown>, keys: string[]): number | null => {
 // The first /cameras/nearby call can be slow while the backend loads every camera from Firestore.
 export const NEARBY_TIMEOUT_MS = 15000;
 
-export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): Promise<ScreenCamera[]> {
-  const res = await request(
-    `${base(apiUrl)}${PATHS.nearby}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
-    NEARBY_TIMEOUT_MS,
-  );
-  const json = (await res.json()) as unknown;
+/** Result of one /cameras/nearby call: what to draw, plus counts for the on-screen status line. */
+export type NearbyResult = { onScreen: ScreenCamera[]; inRange: number };
+
+export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): Promise<NearbyResult> {
+  // Standalone call for POST /cameras/nearby (doesn't use the shared request() helper).
+  // Body = exactly the backend's LocationInputInfo: 10 fields, all numbers.
+  const url = `${apiUrl.trim().replace(/\/+$/, '')}/cameras/nearby`;
+  const payload = {
+    lat_p: Number(body.lat_p),
+    lon_p: Number(body.lon_p),
+    alpha: Number(body.alpha),
+    beta: Number(body.beta),
+    gamma: Number(body.gamma),
+    compass_heading: Number(body.compass_heading),
+    screen_w: Number(body.screen_w),
+    screen_h: Number(body.screen_h),
+    hfov: Number(body.hfov),
+    radius: Number(body.radius),
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NEARBY_TIMEOUT_MS);
+  let res: Response;
+  try {
+    console.log('[nearby] ->', url, JSON.stringify(payload));
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'bypass-tunnel-reminder': '1' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    console.log('[nearby] x  no response from', url, String(e));
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const text = await res.text();
+  console.log('[nearby] <-', res.status, text.slice(0, 300));
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
+
+  let json: unknown = [];
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`Server sent something that isn't JSON: ${text.slice(0, 80)}`);
+  }
+
+  // Backend returns a list of { name, x, y, distance_to_user }, x/y as 0–1 fractions of the screen.
   const list = Array.isArray(json) ? json : Array.isArray((json as { cameras?: unknown })?.cameras) ? (json as { cameras: unknown[] }).cameras : [];
   const out: ScreenCamera[] = [];
   list.forEach((raw, i) => {
     if (!raw || typeof raw !== 'object') return;
     const o = raw as Record<string, unknown>;
-    if (o.visible === false || o.on_screen === false || o.in_view === false) return;
     const nx = pickNum(o, ['x', 'screen_x', 'px', 'u']);
     const ny = pickNum(o, ['y', 'screen_y', 'py', 'v']);
     if (nx == null || ny == null) return;
-    // project_to_screen returns x/y as fractions of the screen (0–1). Outside that range = off screen.
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-    const x = nx * body.screen_w;
-    const y = ny * body.screen_h;
-    const cam = (o.camera && typeof o.camera === 'object' ? o.camera : o) as Record<string, unknown>;
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return; // off screen
     out.push({
-      key: String(cam.id ?? o.id ?? i),
-      x,
-      y,
-      label: String(cam.name ?? cam.label ?? o.name ?? 'Flock camera'),
-      distance_m: pickNum(o, ['distance_to_user', 'distance_m', 'distance', 'dist_m']) ?? pickNum(cam, ['distance_m', 'distance']),
+      key: String(o.id ?? o.name ?? i),
+      x: nx * payload.screen_w,
+      y: ny * payload.screen_h,
+      label: String(o.name ?? 'Flock camera'),
+      distance_m: pickNum(o, ['distance_to_user', 'distance_m', 'distance']),
     });
   });
-  return out;
+  return { onScreen: out, inRange: list.filter((c) => c && typeof c === 'object').length };
+}
+
+/**
+ * POST /cameras/list -> raw cameras { name, latitude, longitude, heading } within `radius_m` of the phone.
+ * The Camera tab caches this and projects markers on the phone. Throws `NoListEndpoint` on 404 (older backend),
+ * so the app can fall back to calling /cameras/nearby.
+ */
+export class NoListEndpoint extends Error {}
+
+export async function fetchCameraList(apiUrl: string, lat: number, lon: number, radius_m: number): Promise<CachedCamera[]> {
+  const url = `${apiUrl.trim().replace(/\/+$/, '')}/cameras/list`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NEARBY_TIMEOUT_MS);
+  try {
+    console.log('[list] ->', url, radius_m);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'bypass-tunnel-reminder': '1' },
+      body: JSON.stringify({ lat_p: lat, lon_p: lon, radius: radius_m }),
+      signal: controller.signal,
+    });
+    if (res.status === 404) throw new NoListEndpoint('backend has no /cameras/list');
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
+    const json = JSON.parse(text) as unknown;
+    const list = Array.isArray(json) ? json : [];
+    const cams: CachedCamera[] = [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      const o = raw as Record<string, unknown>;
+      const latitude = pickNum(o, ['latitude', 'lat']);
+      const longitude = pickNum(o, ['longitude', 'lon', 'lng']);
+      if (latitude == null || longitude == null) continue;
+      cams.push({ name: String(o.name ?? 'Flock camera'), latitude, longitude, heading: pickNum(o, ['heading']) ?? undefined });
+    }
+    console.log('[list] <-', cams.length, 'cameras');
+    return cams;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function checkHealth(apiUrl: string): Promise<boolean> {
@@ -370,7 +448,9 @@ async function request(url: string, init: RequestInit, ms: number) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    // `bypass-tunnel-reminder` lets requests through a localtunnel address; harmless everywhere else.
+    const headers: Record<string, string> = { ...((init.headers as Record<string, string> | undefined) ?? {}), 'bypass-tunnel-reminder': '1' };
+    const res = await fetch(url, { ...init, headers, signal: ctrl.signal });
     if (!res.ok) {
       // Include the server's reason (FastAPI puts it in `detail`) so errors are readable on screen.
       let reason = '';

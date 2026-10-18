@@ -14,7 +14,7 @@ logger = logging.getLogger("uvicorn.error")
 DEFAULT_RADIUS_M = 500
 CACHE_SECONDS = 300
 
-credential_path = os.getenv("DATABASE_CREDENTIALS", "/Users/prestoncrowe/Desktop/Development/FelixDatathon26/backend/felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
+credential_path = os.getenv("DATABASE_CREDENTIALS", "C:\\Users\\fifth\\Downloads\\felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
 
 _db = None
 _unavailable_reason: str | None = None  # set once if Firebase can't be set up; we don't retry
@@ -61,7 +61,7 @@ def all_cameras() -> list[FlockCamera]:
     with _lock: 
         if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
             cameras = []
-            for doc in _get_db().collection("flock_cameras").stream():
+            for doc in _db.collection("cameras").stream():
                 try:
                     cameras.append(FlockCamera.model_validate(doc.to_dict()))
                 except ValidationError:

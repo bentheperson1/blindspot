@@ -13,9 +13,11 @@ import {
 } from "react-native";
 import {
   NEARBY_TIMEOUT_MS,
+  NoListEndpoint,
   buildNearbyRequest,
   buildPayload,
   classifyPhoto,
+  fetchCameraList,
   fetchNearbyOnScreen,
   lensFromExif,
   sendFrame,
@@ -24,12 +26,27 @@ import {
   type LensInfo,
   type ScreenCamera,
 } from "../api";
+import {
+  projectToScreen,
+  yawOffsetDeg,
+  type CachedCamera,
+} from "../projection";
 import { screenHfov } from "../fov";
 import { Button, Chip, FramedCard, LogoMark } from "../components/ui";
+import { Vignette } from "../components/Vignette";
+import { formatDistance } from "../geo";
+import { metersBetween } from "../cameraList";
 import {
+  CAMERA_LIST_MOVE_FRACTION,
+  CAMERA_LIST_REFRESH_MS,
+  CAMERA_MOUNT_HEIGHT_M,
   FRAME_INTERVAL_MS,
   FRAME_JPEG_QUALITY,
   FRAME_WIDTH_PX,
+  HEADING_SMOOTHING,
+  MARKER_UPDATE_MS,
+  PHONE_HEIGHT_M,
+  SEND_FRAMES,
 } from "../config";
 import type { Telemetry } from "../sensors";
 import { useSettings } from "../settings";
@@ -65,11 +82,26 @@ const VERDICT_UI: Record<
   },
 };
 
+const PIN_SMOOTH_MS = 65;
 // Fixed at no zoom so the focal length doesn't change under the backend. Sent with every frame in `extra.lens`.
 const CAMERA_ZOOM = 0;
 // How often to ask /cameras/nearby where cameras are on screen. Only sensor data is sent, so it can run faster than frames.
 const NEARBY_INTERVAL_MS = 500;
+// After a failed /cameras/nearby call, wait this long before trying again.
 const NEARBY_RETRY_AFTER_FAIL_MS = 10000;
+
+const sleep = (ms: number) =>
+  new Promise((r) => setTimeout(r, Math.max(0, ms)));
+
+/** Turns a fetch error into the short line shown on the status card. */
+function describeError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/abort|cancel/i.test(msg))
+    return `no reply in ${NEARBY_TIMEOUT_MS / 1000} s. The server isn't reachable from this phone, hasn't finished starting, or is stuck.`;
+  if (/network request failed|could not connect|offline/i.test(msg))
+    return "can't connect to the server address in Settings.";
+  return msg;
+}
 
 /**
  * AR view: a thin client for the backend model.
@@ -88,7 +120,7 @@ export function ARScreen({
   bottomInset: number; // height of the tab bar
 }) {
   const [permission, requestPermission] = useCameraPermissions();
-  const { apiUrl, radius, mode } = useSettings();
+  const { apiUrl, radius, mode, units } = useSettings();
   const styles = useThemedStyles(makeStyles);
   const { width, height } = useWindowDimensions();
   const camRef = useRef<CameraView>(null);
@@ -108,6 +140,34 @@ export function ARScreen({
   const [onScreen, setOnScreen] = useState<ScreenCamera[]>([]);
   // Last /cameras/nearby problem, shown in the status card so it can be debugged on the phone.
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+  // How many cameras /cameras/nearby found in range on the last call (null = no answer yet).
+  const [inRange, setInRange] = useState<number | null>(null);
+  // Cached camera list from /cameras/list (refreshed every 30 s walking / 5 s driving) and where it was fetched.
+  const listRef = useRef<{
+    cams: CachedCamera[];
+    at: number;
+    lat: number;
+    lon: number;
+    radius: number;
+  } | null>(null);
+  // True if the backend has no /cameras/list yet: then fall back to asking /cameras/nearby every 0.5 s.
+  const [useLegacyNearby, setUseLegacyNearby] = useState(false);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  // When the camera list last downloaded fine. While it's recent, a failed photo upload doesn't mean "offline".
+  const lastListOkRef = useRef(0);
+  // Smoothed gyro-to-north offset (degrees). null until the first reading.
+  const yawOffsetRef = useRef<number | null>(null);
+  // Compass calibration level 0–3 (expo-location). Low = markers can be off by a lot until it's calibrated.
+  const [compassLevel, setCompassLevel] = useState<number | null>(null);
+  // GPS smoothed over a few seconds (indoors a fix can jump 20–50 m between readings).
+  const smoothPosRef = useRef<{
+    lat: number;
+    lon: number;
+    ts: number | null;
+  } | null>(null);
+  // Displayed distance per camera, eased so the label doesn't jump around.
+  const shownDistRef = useRef<Map<number, number>>(new Map());
   const viewRef = useRef({ width, height });
   viewRef.current = { width, height };
   const c = useColors();
@@ -119,14 +179,17 @@ export function ARScreen({
   const pausedRef = useRef(false);
   const captureRef = useRef<Promise<unknown> | null>(null);
 
+  const pinTargetsRef = useRef<ScreenCamera[]>([]);
+  const shownPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
   const report = (s: BackendStatus) => {
     setStatus(s);
     onBackendStatus(s);
   };
 
-  // ---- Frame loop: capture -> shrink -> model -> draw ----
+  // ---- Frame loop: capture -> shrink -> model -> draw (slow on purpose: each photo stalls the preview) ----
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !SEND_FRAMES) return;
     let stopped = false;
     report("connecting");
 
@@ -137,7 +200,6 @@ export function ARScreen({
           continue;
         }
         const started = Date.now();
-        let waitMs = NEARBY_INTERVAL_MS;
         try {
           // Sensor readings and timestamps are all taken at the moment of capture, so they line up with the frame.
           const telemetry = snapshot();
@@ -200,16 +262,18 @@ export function ARScreen({
             }
           }
         } catch {
-          waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
             setResult({ detections: [] });
-            report("error");
+            // Only show "No connection" if the camera list isn't getting through either.
+            if (
+              Date.now() - lastListOkRef.current >
+              CAMERA_LIST_REFRESH_MS.pedestrian + 10_000
+            )
+              report("error");
           }
         }
         const wait = Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started));
-        await new Promise((r) =>
-          setTimeout(r, Math.max(0, waitMs - (Date.now() - started))),
-        );
+        await new Promise((r) => setTimeout(r, wait));
       }
     })();
 
@@ -219,13 +283,204 @@ export function ARScreen({
     };
   }, [ready, apiUrl]);
 
-  // ---- Nearby loop: POST /cameras/nearby -> markers at the screen position the backend returns ----
+  // ---- Camera list cache: download nearby cameras (lat/long) every 30 s walking / 5 s driving ----
+  useEffect(() => {
+    if (!ready || useLegacyNearby) return;
+    let stopped = false;
+    (async () => {
+      while (!stopped) {
+        let waitMs = 1000; // check once a second whether a re-download is due (cheap, no network)
+        try {
+          const loc = snapshot().location;
+          const radius_m = settingsRef.current.radius_m;
+          if (loc) {
+            const cached = listRef.current;
+            const due =
+              !cached ||
+              cached.radius !== radius_m ||
+              Date.now() - cached.at >
+                CAMERA_LIST_REFRESH_MS[modeRef.current] ||
+              metersBetween(
+                cached.lat,
+                cached.lon,
+                loc.latitude,
+                loc.longitude,
+              ) >
+                radius_m * CAMERA_LIST_MOVE_FRACTION;
+            if (due) {
+              const cams = await fetchCameraList(
+                apiUrl,
+                loc.latitude,
+                loc.longitude,
+                radius_m,
+              );
+              if (stopped) break;
+              listRef.current = {
+                cams,
+                at: Date.now(),
+                lat: loc.latitude,
+                lon: loc.longitude,
+                radius: radius_m,
+              };
+              shownDistRef.current = new Map(); // list order may change, so eased labels start fresh
+              setInRange(cams.length);
+              setNearbyError(null);
+              lastListOkRef.current = Date.now();
+              report("ok");
+            }
+          }
+        } catch (e) {
+          if (e instanceof NoListEndpoint) {
+            if (!stopped) setUseLegacyNearby(true); // older backend: use /cameras/nearby instead
+            return;
+          }
+          waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
+          if (!stopped) {
+            setNearbyError(describeError(e));
+            if (!SEND_FRAMES) report("error");
+          }
+        }
+        await sleep(waitMs);
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [ready, apiUrl, useLegacyNearby]);
+
+  // ---- Markers: placed on the phone from the cached list ~10×/s (same math as the backend's project_to_screen) ----
+  useEffect(() => {
+    if (!ready || useLegacyNearby) return;
+    const id = setInterval(() => {
+      const cached = listRef.current;
+      if (!cached) return;
+      const { width: w, height: h } = viewRef.current;
+      const hfov = screenHfov(lensRef.current?.focal_length_35mm, w, h);
+      const t = snapshot();
+      const body = buildNearbyRequest(
+        t,
+        { width: w, height: h, hfov },
+        cached.radius,
+      );
+      if (!body) return;
+
+      // Smooth GPS: blend each new fix in, trusting accurate fixes more than poor ones.
+      const loc = t.location;
+      const sp = smoothPosRef.current;
+      if (loc && (!sp || sp.ts !== t.locationTimestamp)) {
+        const acc = loc.accuracy ?? 30;
+        const k = !sp ? 1 : acc <= 10 ? 0.5 : acc <= 25 ? 0.25 : 0.1;
+        smoothPosRef.current = {
+          lat: !sp ? loc.latitude : sp.lat + k * (loc.latitude - sp.lat),
+          lon: !sp ? loc.longitude : sp.lon + k * (loc.longitude - sp.lon),
+          ts: t.locationTimestamp,
+        };
+      }
+      const me = smoothPosRef.current ?? { lat: body.lat_p, lon: body.lon_p };
+
+      // Steadier heading: the gyro (alpha) handles quick turns; the compass only nudges the offset to north.
+      const raw = yawOffsetDeg(
+        body.alpha,
+        body.beta,
+        body.gamma,
+        body.compass_heading,
+      );
+      const prev = yawOffsetRef.current;
+      const gap =
+        prev == null ? 0 : ((((raw - prev + 180) % 360) + 360) % 360) - 180; // shortest way around
+      // Correct faster when the gap is big (first fix, gyro drift), gently when it's just compass noise.
+      const k = prev == null ? 1 : Math.abs(gap) > 25 ? 0.5 : HEADING_SMOOTHING;
+      const offset = prev == null ? raw : prev + k * gap;
+      yawOffsetRef.current = offset;
+      const level = t.compass ? Math.round(t.compass.accuracy) : null;
+      setCompassLevel((p) => (p === level ? p : level));
+
+      const pins: ScreenCamera[] = projectToScreen(
+        me.lat,
+        me.lon,
+        body.alpha,
+        body.beta,
+        body.gamma,
+        body.compass_heading,
+        cached.cams,
+        w,
+        h,
+        hfov,
+        {
+          yawOffsetDeg: offset,
+          phoneAltM: PHONE_HEIGHT_M,
+          cameraAltM: CAMERA_MOUNT_HEIGHT_M,
+        },
+      )
+        .filter((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)
+        .map((p) => {
+          // Label = real distance along the ground (not depth along the camera's view, which changes as you turn),
+          // eased toward the new value so it settles instead of jumping.
+          const cam = cached.cams[p.index];
+          const d = metersBetween(me.lat, me.lon, cam.latitude, cam.longitude);
+          const prevD = shownDistRef.current.get(p.index);
+          const shown = prevD == null ? d : prevD + 0.15 * (d - prevD);
+          shownDistRef.current.set(p.index, shown);
+          return {
+            key: `${p.name}-${p.index}`,
+            x: p.x * w,
+            y: p.y * h,
+            label: p.name,
+            distance_m: shown,
+          };
+        });
+      pinTargetsRef.current = pins;
+    }, MARKER_UPDATE_MS);
+    return () => clearInterval(id);
+  }, [ready, useLegacyNearby]);
+
+  // ---- Smoothing: ease drawn marker positions toward their targets every frame ----
   useEffect(() => {
     if (!ready) return;
+    let raf = 0;
+    let last = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.min(now - last, 100);
+      last = now;
+      const k = 1 - Math.exp(-dt / PIN_SMOOTH_MS);
+
+      const targets = pinTargetsRef.current;
+      const shown = shownPosRef.current;
+
+      const next = targets.map((p) => {
+        const prev = shown.get(p.key);
+        // A marker that just appeared starts at its target instead of flying in from nowhere.
+        const x = prev ? prev.x + k * (p.x - prev.x) : p.x;
+        const y = prev ? prev.y + k * (p.y - prev.y) : p.y;
+        shown.set(p.key, { x, y });
+        return { ...p, x, y };
+      });
+
+      // Forget markers that left the screen so they start fresh if they come back.
+      if (shown.size > targets.length) {
+        const keys = new Set(targets.map((p) => p.key));
+        for (const key of shown.keys()) {
+          if (!keys.has(key)) shown.delete(key);
+        }
+      }
+
+      setOnScreen((prev) => (prev.length === 0 && next.length === 0 ? prev : next));
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [ready]);
+
+  // ---- Fallback (only if the backend has no /cameras/list): ask /cameras/nearby every 0.5 s ----
+  useEffect(() => {
+    if (!ready || !useLegacyNearby) return;
     let stopped = false;
     (async () => {
       while (!stopped) {
         const started = Date.now();
+        let waitMs = NEARBY_INTERVAL_MS;
         try {
           const { width: w, height: h } = viewRef.current;
           const body = buildNearbyRequest(
@@ -238,37 +493,37 @@ export function ARScreen({
             settingsRef.current.radius_m,
           );
           if (body) {
-            const cams = await fetchNearbyOnScreen(apiUrl, body);
+            const res = await fetchNearbyOnScreen(apiUrl, body);
             if (!stopped) {
-              setOnScreen(cams);
+              if (!stopped) {
+                pinTargetsRef.current = res.onScreen;
+                setInRange(res.inRange);
+                setNearbyError(null);
+              }
+
+              setInRange(res.inRange);
               setNearbyError(null);
             }
           }
         } catch (e) {
+          // Back off after a failure so a slow backend isn't buried under retries.
+          waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
-            setOnScreen([]);
-            const msg = e instanceof Error ? e.message : String(e);
-            setNearbyError(
-              /abort|cancel/i.test(msg)
-                ? `no reply in ${NEARBY_TIMEOUT_MS / 1000} s. The server is reachable but /cameras/nearby is too slow or stuck.`
-                : /network request failed|could not connect|offline/i.test(msg)
-                  ? "can't connect to the server address in Settings."
-                  : msg,
-            );
+            if (!stopped) {
+              pinTargetsRef.current = [];
+              setNearbyError(describeError(e));
+            }
+
+            setNearbyError(describeError(e));
           }
         }
-        await new Promise((r) =>
-          setTimeout(
-            r,
-            Math.max(0, NEARBY_INTERVAL_MS - (Date.now() - started)),
-          ),
-        );
+        await sleep(waitMs - (Date.now() - started));
       }
     })();
     return () => {
       stopped = true;
     };
-  }, [ready, apiUrl]);
+  }, [ready, apiUrl, useLegacyNearby]);
 
   // ---- Snapshot: one photo -> /classify -> verdict card ----
   const takeSnapshot = async () => {
@@ -392,7 +647,7 @@ export function ARScreen({
         ? "You're in a camera's view"
         : "No cameras detected";
   const body = offline
-    ? "Check the server address in Settings. Frames start sending again on their own."
+    ? `Trying ${apiUrl}. If that isn't the backend's address, fix it in Settings.`
     : waitingForSensors
       ? "Waiting for GPS and the compass. Hold the phone up and move it in a figure-8."
       : alerting
@@ -446,8 +701,8 @@ export function ARScreen({
             <Chip
               label={
                 cam.distance_m != null
-                  ? `${cam.label} · ${Math.round(cam.distance_m)} m`
-                  : cam.label
+                  ? formatDistance(cam.distance_m, units)
+                  : "—"
               }
               tone="alert"
             />
@@ -455,21 +710,28 @@ export function ARScreen({
         </View>
       ))}
 
-      {/* Solid border while a camera is in view (no animation). */}
-      {alerting && (
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, styles.alertBorder]}
-        />
-      )}
+      {/* Red edge glow: fades in when a camera comes into view, breathes while it stays, fades out when it leaves. */}
+      <Vignette active={alerting} />
 
       {/* Status, top left */}
       <FramedCard style={[styles.infoCard, { top: topInset - 40 }]}>
         <Chip label={chip.label} tone={chip.tone} />
         <Text style={styles.infoTitle}>{cardTitle}</Text>
-        {nearbyError && (
+        {compassLevel != null && compassLevel <= 1 && !nearbyError ? (
+          <Text style={styles.nearbyError}>
+            Compass needs calibrating: move the phone in a figure‑8 for markers
+            to line up.
+          </Text>
+        ) : null}
+        {nearbyError ? (
           <Text style={styles.nearbyError}>Nearby: {nearbyError}</Text>
-        )}
+        ) : inRange != null ? (
+          <Text style={styles.nearbyInfo}>
+            {inRange === 0
+              ? `No cameras within ${(radius / 1609.344).toFixed(1)} mi`
+              : `${inRange} camera${inRange === 1 ? "" : "s"} within ${(radius / 1609.344).toFixed(1)} mi · ${onScreen.length} on screen`}
+          </Text>
+        ) : null}
       </FramedCard>
 
       {/* Processed frame from the backend. Tap to toggle full screen. */}
@@ -635,8 +897,9 @@ const makeStyles = (c: Palette) =>
     pinLabelWrap: {
       position: "absolute",
       top: PIN + 4,
+      left: -40,
+      right: -40,
       alignItems: "center",
-      minWidth: 160,
     },
     fill: { flex: 1, backgroundColor: "#282B4A" },
     center: {
@@ -668,7 +931,6 @@ const makeStyles = (c: Palette) =>
       borderRadius: 4,
     },
     detLabelWrap: { position: "absolute", top: -30, left: -3 },
-    alertBorder: { borderWidth: 8, borderColor: c.alert },
     infoCard: {
       position: "absolute",
       left: 16,
@@ -676,6 +938,12 @@ const makeStyles = (c: Palette) =>
       paddingVertical: 10,
       gap: 6,
       maxWidth: 250,
+    },
+    nearbyInfo: {
+      fontFamily: fonts.sans,
+      fontSize: 12,
+      lineHeight: 16,
+      color: c.muted,
     },
     nearbyError: {
       fontFamily: fonts.sans,

@@ -8,6 +8,8 @@ export type Camera = {
   distance_m?: number;
   alert?: boolean;
   name?: string;
+  /** Compass heading the camera points at, degrees, 0 = north, clockwise. Used to draw its field of view. */
+  heading?: number;
   /** Optional field-of-view polygon to draw on the map. */
   cone?: LatLng[];
 };
