@@ -1,26 +1,11 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import {
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import {
-  NEARBY_TIMEOUT_MS,
   NoListEndpoint,
   buildNearbyRequest,
-  buildPayload,
   fetchCameraList,
   fetchNearbyOnScreen,
-  lensFromExif,
-  sendFrame,
-  type FrameResult,
-  type LensInfo,
   type ScreenCamera,
 } from "../api";
 import {
@@ -37,25 +22,21 @@ import {
   CAMERA_LIST_MOVE_FRACTION,
   CAMERA_LIST_REFRESH_MS,
   CAMERA_MOUNT_HEIGHT_M,
-  FRAME_INTERVAL_MS,
-  FRAME_JPEG_QUALITY,
-  FRAME_WIDTH_PX,
   HEADING_SMOOTHING,
   MARKER_UPDATE_MS,
   PHONE_HEIGHT_M,
-  SEND_FRAMES,
 } from "../config";
 import type { Telemetry } from "../sensors";
 import { useSettings } from "../settings";
-import { BORDER, fonts, radii, useThemedStyles, type Palette } from "../theme";
-import type { BackendStatus, Detection } from "../types";
+import { BORDER, fonts, useThemedStyles, type Palette } from "../theme";
+import type { BackendStatus } from "../types";
 
 const PIN_SMOOTH_MS = 65;
-// Fixed at no zoom so the focal length doesn't change under the backend. Sent with every frame in `extra.lens`.
+// Fixed at no zoom so the on-screen field of view matches what the projection assumes.
 const CAMERA_ZOOM = 0;
-// How often to ask /cameras/nearby where cameras are on screen. Only sensor data is sent, so it can run faster than frames.
+// How often to ask /cameras/nearby where cameras are on screen (only on the legacy fallback).
 const NEARBY_INTERVAL_MS = 500;
-// After a failed /cameras/nearby call, wait this long before trying again.
+// After a failed network call, wait this long before trying again.
 const NEARBY_RETRY_AFTER_FAIL_MS = 10000;
 
 const sleep = (ms: number) =>
@@ -65,16 +46,17 @@ const sleep = (ms: number) =>
 function describeError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   if (/abort|cancel/i.test(msg))
-    return `no reply in ${NEARBY_TIMEOUT_MS / 1000} s. The server isn't reachable from this phone, hasn't finished starting, or is stuck.`;
+    return "the server isn't reachable from this phone, hasn't finished starting, or is stuck.";
   if (/network request failed|could not connect|offline/i.test(msg))
     return "can't connect to the server address in Settings.";
   return msg;
 }
 
 /**
- * AR view: a thin client for the backend model.
- * Each tick it sends a base64 frame + raw GPS + raw rotation/motion sensors,
- * and draws exactly what the backend returns. No math or filtering happens here.
+ * AR view: live markers for license-plate cameras around you.
+ * It downloads the nearby camera list from the backend and projects each camera onto the
+ * screen on the phone (same math as the backend's project_to_screen), ~10×/s. Photo capture
+ * and classification live on the Scan tab (see ClassifyScreen), not here.
  */
 export function ARScreen({
   snapshot,
@@ -91,24 +73,18 @@ export function ARScreen({
   const { apiUrl, radius, mode, units } = useSettings();
   const styles = useThemedStyles(makeStyles);
   const { width, height } = useWindowDimensions();
-  const camRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<BackendStatus>("connecting");
-  const [result, setResult] = useState<FrameResult>({ detections: [] });
-  const detections: Detection[] = result.detections;
 
   // Latest settings in a ref so changing them doesn't restart the loop.
   const settingsRef = useRef({ radius_m: radius, mode });
   settingsRef.current = { radius_m: radius, mode };
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [showOutputFull, setShowOutputFull] = useState(false);
   const [waitingForSensors, setWaitingForSensors] = useState(false);
-  // Latest lens info from frame EXIF (for hfov), and the cameras /cameras/nearby placed on screen.
-  const lensRef = useRef<LensInfo | null>(null);
+  // Cameras /cameras/nearby or the local projection placed on screen.
   const [onScreen, setOnScreen] = useState<ScreenCamera[]>([]);
-  // Last /cameras/nearby problem, shown in the status card so it can be debugged on the phone.
+  // Last nearby/list problem, shown in the status card so it can be debugged on the phone.
   const [nearbyError, setNearbyError] = useState<string | null>(null);
-  // How many cameras /cameras/nearby found in range on the last call (null = no answer yet).
+  // How many cameras were found in range on the last call (null = no answer yet).
   const [inRange, setInRange] = useState<number | null>(null);
   // Cached camera list from /cameras/list (refreshed every 30 s walking / 5 s driving) and where it was fetched.
   const listRef = useRef<{
@@ -122,8 +98,6 @@ export function ARScreen({
   const [useLegacyNearby, setUseLegacyNearby] = useState(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  // When the camera list last downloaded fine. While it's recent, a failed photo upload doesn't mean "offline".
-  const lastListOkRef = useRef(0);
   // Smoothed gyro-to-north offset (degrees). null until the first reading.
   const yawOffsetRef = useRef<number | null>(null);
   // Compass calibration level 0–3 (expo-location). Low = markers can be off by a lot until it's calibrated.
@@ -147,100 +121,11 @@ export function ARScreen({
     onBackendStatus(s);
   };
 
-  // ---- Frame loop: capture -> shrink -> model -> draw (slow on purpose: each photo stalls the preview) ----
-  useEffect(() => {
-    if (!ready || !SEND_FRAMES) return;
-    let stopped = false;
-    report("connecting");
-
-    (async () => {
-      while (!stopped) {
-        const started = Date.now();
-        try {
-          // Sensor readings and timestamps are all taken at the moment of capture, so they line up with the frame.
-          const telemetry = snapshot();
-          const monotonicMs = performance.now();
-          const timestampSec = Date.now() / 1000;
-          // Don't spend a capture until GPS, compass and motion all have a reading.
-          if (
-            !buildPayload(
-              telemetry,
-              null,
-              { timestampSec, monotonicMs },
-              { platform: Platform.OS, settings: settingsRef.current },
-            )
-          ) {
-            if (!stopped) setWaitingForSensors(true);
-          } else {
-            if (!stopped) setWaitingForSensors(false);
-            // skipProcessing must stay off: with it on, many Android phones return sideways frames.
-            // exif: true returns this photo's focal length; the resize below strips EXIF, so it's sent as `extra.lens`.
-            const shot = await camRef.current?.takePictureAsync({
-              quality: 0.5,
-              shutterSound: false,
-              skipProcessing: false,
-              exif: true,
-            });
-            if (shot && !stopped) {
-              const img = await ImageManipulator.manipulate(shot.uri)
-                .resize({ width: FRAME_WIDTH_PX })
-                .renderAsync();
-              const small = await img.saveAsync({
-                compress: FRAME_JPEG_QUALITY,
-                format: SaveFormat.JPEG,
-                base64: true,
-              });
-              const lens = lensFromExif(shot.exif, CAMERA_ZOOM);
-              lensRef.current = lens;
-              const payload = buildPayload(
-                telemetry,
-                {
-                  base64: small.base64 ?? "",
-                  width: small.width,
-                  height: small.height,
-                  cameraWidth: shot.width,
-                  cameraHeight: shot.height,
-                  lens,
-                },
-                { timestampSec, monotonicMs },
-                { platform: Platform.OS, settings: settingsRef.current },
-              );
-              if (payload) {
-                const res = await sendFrame(apiUrl, payload);
-                if (!stopped) {
-                  setResult(res);
-                  setLatencyMs(Date.now() - started);
-                  report("ok");
-                }
-              }
-            }
-          }
-        } catch {
-          if (!stopped) {
-            setResult({ detections: [] });
-            // Only show "No connection" if the camera list isn't getting through either.
-            if (
-              Date.now() - lastListOkRef.current >
-              CAMERA_LIST_REFRESH_MS.pedestrian + 10_000
-            )
-              report("error");
-          }
-        }
-        const wait = Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started));
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    })();
-
-    return () => {
-      stopped = true;
-      onBackendStatus("off");
-    };
-  }, [ready, apiUrl]);
-
   // ---- Camera list cache: download nearby cameras (lat/long) every 30 s walking / 5 s driving ----
   useEffect(() => {
     if (!ready || useLegacyNearby) return;
     let stopped = false;
+    report("connecting");
     (async () => {
       while (!stopped) {
         let waitMs = 1000; // check once a second whether a re-download is due (cheap, no network)
@@ -279,7 +164,6 @@ export function ARScreen({
               shownDistRef.current = new Map(); // list order may change, so eased labels start fresh
               setInRange(cams.length);
               setNearbyError(null);
-              lastListOkRef.current = Date.now();
               report("ok");
             }
           }
@@ -291,7 +175,7 @@ export function ARScreen({
           waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
             setNearbyError(describeError(e));
-            if (!SEND_FRAMES) report("error");
+            report("error");
           }
         }
         await sleep(waitMs);
@@ -299,6 +183,7 @@ export function ARScreen({
     })();
     return () => {
       stopped = true;
+      onBackendStatus("off");
     };
   }, [ready, apiUrl, useLegacyNearby]);
 
@@ -309,13 +194,14 @@ export function ARScreen({
       const cached = listRef.current;
       if (!cached) return;
       const { width: w, height: h } = viewRef.current;
-      const hfov = screenHfov(lensRef.current?.focal_length_35mm, w, h);
+      const hfov = screenHfov(null, w, h);
       const t = snapshot();
       const body = buildNearbyRequest(
         t,
         { width: w, height: h, hfov },
         cached.radius,
       );
+      setWaitingForSensors((p) => (p === !body ? p : !body));
       if (!body) return;
 
       // Smooth GPS: blend each new fix in, trusting accurate fixes more than poor ones.
@@ -442,33 +328,26 @@ export function ARScreen({
             {
               width: w,
               height: h,
-              hfov: screenHfov(lensRef.current?.focal_length_35mm, w, h),
+              hfov: screenHfov(null, w, h),
             },
             settingsRef.current.radius_m,
           );
           if (body) {
             const res = await fetchNearbyOnScreen(apiUrl, body);
             if (!stopped) {
-              if (!stopped) {
-                pinTargetsRef.current = res.onScreen;
-                setInRange(res.inRange);
-                setNearbyError(null);
-              }
-
+              pinTargetsRef.current = res.onScreen;
               setInRange(res.inRange);
               setNearbyError(null);
+              report("ok");
             }
           }
         } catch (e) {
           // Back off after a failure so a slow backend isn't buried under retries.
           waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
-            if (!stopped) {
-              pinTargetsRef.current = [];
-              setNearbyError(describeError(e));
-            }
-
+            pinTargetsRef.current = [];
             setNearbyError(describeError(e));
+            report("error");
           }
         }
         await sleep(waitMs - (Date.now() - started));
@@ -479,21 +358,8 @@ export function ARScreen({
     };
   }, [ready, apiUrl, useLegacyNearby]);
 
-  // ---- Alert: backend decides via `alert`; if it omits it, any detection counts ----
-  // Cameras the frame endpoint placed (dots, 0–1 in the camera view), drawn the same way as /cameras/nearby ones.
-  const frameDots: ScreenCamera[] = (result.dots ?? [])
-    .filter((d) => d.x >= 0 && d.x <= 1 && d.y >= 0 && d.y <= 1)
-    .map((d, i) => ({
-      key: `dot-${d.name}-${i}`,
-      x: d.x * width,
-      y: d.y * height,
-      label: d.name,
-      distance_m: d.distance_to_user,
-    }));
-  // Markers come from the cached list (updated 10×/s). The photo upload's dots arrive only every few seconds,
-  // so showing them made stale rings freeze on screen; use them only on the old /cameras/nearby fallback.
-  const pins = onScreen.length > 0 || !useLegacyNearby ? onScreen : frameDots;
-  const alerting = (result.alert ?? detections.length > 0) || pins.length > 0;
+  const pins = onScreen;
+  const alerting = pins.length > 0;
 
   if (!permission) return <View style={styles.fill} />;
   if (!permission.granted) {
@@ -510,8 +376,8 @@ export function ARScreen({
           Camera access needed
         </Text>
         <Text style={styles.permBody}>
-          Point your camera at poles and intersections. Each frame is checked
-          for license-plate cameras.
+          Hold your phone up and we'll mark any license-plate cameras around you
+          right on the live view.
         </Text>
         <Button
           label="Allow camera"
@@ -522,7 +388,7 @@ export function ARScreen({
     );
   }
 
-  // What the status strip and bottom text say, from the backend's answer.
+  // What the status strip and bottom text say.
   const offline = status === "error";
   const chip = offline
     ? { label: "Offline", tone: "surface" as const }
@@ -536,7 +402,7 @@ export function ARScreen({
     : waitingForSensors
       ? "Warming up"
       : alerting
-        ? `Camera spotted${Math.max(detections.length, pins.length) > 1 ? ` (${Math.max(detections.length, pins.length)})` : ""}`
+        ? `Camera in view${pins.length > 1 ? ` (${pins.length})` : ""}`
         : "Scanning";
   const headline = offline
     ? "Can't reach the server"
@@ -544,20 +410,18 @@ export function ARScreen({
       ? "Finding your location and direction"
       : alerting
         ? "You're in a camera's view"
-        : "No cameras detected";
+        : "No cameras in view";
   const body = offline
     ? `Trying ${apiUrl}. If that isn't the backend's address, fix it in Settings.`
     : waitingForSensors
       ? "Waiting for GPS and the compass. Hold the phone up and move it in a figure-8."
-      : (result.message ??
-        (alerting
-          ? "A license-plate camera is in frame."
-          : "Point the camera at poles and intersections."));
+      : alerting
+        ? "A license-plate camera is in your line of sight."
+        : "Pan around. Markers appear over any cameras near you.";
 
   return (
     <View style={styles.fill}>
       <CameraView
-        ref={camRef}
         style={StyleSheet.absoluteFill}
         facing="back"
         zoom={CAMERA_ZOOM}
@@ -565,31 +429,7 @@ export function ARScreen({
         animateShutter={false}
       />
 
-      {/* Model detections. Boxes are normalized 0–1 relative to the frame. */}
-      {detections.map((d, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={[
-            styles.detBox,
-            {
-              left: d.box[0] * width,
-              top: d.box[1] * height,
-              width: d.box[2] * width,
-              height: d.box[3] * height,
-            },
-          ]}
-        >
-          <View style={styles.detLabelWrap}>
-            <Chip
-              label={`${d.label} ${Math.round(d.confidence * 100)}%`}
-              tone="alert"
-            />
-          </View>
-        </View>
-      ))}
-
-      {/* Cameras placed by /cameras/nearby: a ring at the exact screen point, with name and distance. */}
+      {/* Cameras projected onto the view: a ring at the exact screen point, with distance. */}
       {pins.map((cam) => (
         <View
           key={cam.key}
@@ -634,47 +474,10 @@ export function ARScreen({
         ) : null}
       </FramedCard>
 
-      {/* Processed frame from the backend. Tap to toggle full screen. */}
-      {result.image ? (
-        <Pressable
-          onPress={() => setShowOutputFull((v) => !v)}
-          style={
-            showOutputFull
-              ? StyleSheet.absoluteFill
-              : [styles.outputThumb, { top: topInset + 12 }]
-          }
-          accessibilityRole="button"
-          accessibilityLabel={
-            showOutputFull
-              ? "Close model output"
-              : "Show model output full screen"
-          }
-        >
-          <Image
-            source={{ uri: `data:image/jpeg;base64,${result.image}` }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-          {!showOutputFull && (
-            <Text style={styles.outputLabel}>Model output</Text>
-          )}
-        </Pressable>
-      ) : null}
-
       {/* Bottom panel, just above the tab bar */}
       <View style={[styles.bottomCard, { bottom: bottomInset }]}>
         <Text style={styles.headline}>{headline}</Text>
         <Text style={styles.body}>{body}</Text>
-        {result.image ? (
-          <Button
-            label={showOutputFull ? "Show camera" : "Show model output"}
-            variant="secondary"
-            onPress={() => setShowOutputFull((v) => !v)}
-          />
-        ) : null}
-        {latencyMs != null && status === "ok" && (
-          <Text style={styles.foot}>Last frame checked in {latencyMs} ms</Text>
-        )}
       </View>
     </View>
   );
@@ -728,13 +531,6 @@ const makeStyles = (c: Palette) =>
       maxWidth: 320,
       marginBottom: 8,
     },
-    detBox: {
-      position: "absolute",
-      borderWidth: 3,
-      borderColor: c.alert,
-      borderRadius: 4,
-    },
-    detLabelWrap: { position: "absolute", top: -30, left: -3 },
     infoCard: {
       position: "absolute",
       left: 16,
@@ -756,29 +552,6 @@ const makeStyles = (c: Palette) =>
       color: c.alert,
     },
     infoTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
-    outputThumb: {
-      position: "absolute",
-      right: 16,
-      width: 108,
-      height: 144,
-      borderRadius: radii.tile,
-      overflow: "hidden",
-      borderWidth: BORDER,
-      borderColor: c.outline,
-      backgroundColor: c.paper,
-    },
-    outputLabel: {
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      textAlign: "center",
-      backgroundColor: c.surface,
-      color: c.ink,
-      fontSize: 11,
-      fontFamily: fonts.sansBold,
-      paddingVertical: 4,
-    },
     bottomCard: {
       position: "absolute",
       left: 0,
@@ -798,5 +571,4 @@ const makeStyles = (c: Palette) =>
       lineHeight: 20,
       color: c.muted,
     },
-    foot: { fontFamily: fonts.sans, fontSize: 12, color: c.muted },
   });

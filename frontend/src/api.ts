@@ -380,6 +380,50 @@ export async function fetchCameraList(apiUrl: string, lat: number, lon: number, 
   }
 }
 
+/** The backend's verdict for a reported photo (POST /images/classify, ClassifyResponse). */
+export type ClassifyResult = {
+  isFlock: boolean;
+  cameraType: string;
+  confidence: number; // 0–1
+  message: string | null;
+};
+
+/** How long to wait for a classify verdict. A real model may be slower than the stub. */
+export const CLASSIFY_TIMEOUT_MS = 20000;
+
+/**
+ * POST /images/classify: send one photo (base64 jpeg) + the reporter's GPS and get back whether
+ * the backend thinks it's a Flock camera. See backend app/api/routes/images.py -> classify.
+ */
+export async function classifyCamera(
+  apiUrl: string,
+  body: { image: string; lat: number | null; lon: number | null; gpsAccuracy?: number | null },
+): Promise<ClassifyResult> {
+  const url = `${apiUrl.trim().replace(/\/+$/, '')}/images/classify`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLASSIFY_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'bypass-tunnel-reminder': '1' },
+      body: JSON.stringify({ image: body.image, lat: body.lat, lon: body.lon, gps_accuracy: body.gpsAccuracy ?? null }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  const text = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
+  const json = JSON.parse(text) as Record<string, unknown>;
+  return {
+    isFlock: Boolean(json.is_flock),
+    cameraType: typeof json.camera_type === 'string' ? json.camera_type : 'Unknown',
+    confidence: typeof json.confidence === 'number' ? json.confidence : 0,
+    message: typeof json.message === 'string' ? json.message : null,
+  };
+}
+
 export async function checkHealth(apiUrl: string): Promise<boolean> {
   try {
     await request(`${base(apiUrl)}${PATHS.health}`, {}, 4000);

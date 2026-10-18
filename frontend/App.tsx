@@ -17,6 +17,7 @@ import { StartupAnimation } from "./src/components/StartupAnimation";
 import { CompassBadge, TAB_BAR_H, TabBar, type Tab } from "./src/components/ui";
 import { useMapCameras } from "./src/cameraList";
 import { ARScreen } from "./src/screens/ARScreen";
+import { ClassifyScreen } from "./src/screens/ClassifyScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { useTelemetry } from "./src/sensors";
@@ -89,7 +90,9 @@ function Main() {
   const [tab, setTab] = useState<Tab>(settings.view);
   const goTo = (t: Tab) => {
     setTab(t);
-    if (t !== "settings" && t !== settings.view) settings.update({ view: t });
+    // Only the Map and Camera tabs are remembered between launches (settings.view is a ViewMode).
+    if ((t === "map" || t === "ar") && t !== settings.view)
+      settings.update({ view: t });
   };
 
   const topBarTop = insets.top + 8;
@@ -132,6 +135,13 @@ function Main() {
         <ARScreen
           snapshot={snapshot}
           onBackendStatus={setBackend}
+          topInset={belowTopBar}
+          bottomInset={tabBarH}
+        />
+      )}
+      {tab === "classify" && (
+        <ClassifyScreen
+          snapshot={snapshot}
           topInset={belowTopBar}
           bottomInset={tabBarH}
         />

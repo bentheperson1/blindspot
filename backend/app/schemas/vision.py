@@ -68,7 +68,24 @@ class Dot(BaseModel):
 class Base64ImageResponse(BaseModel):
     telemetry: Telemetry | None = None
     dots: list[Dot] = []
-    
+
+
+class ClassifyRequest(BaseModel):
+    """A user-submitted report: one photo of a suspected camera plus where they were standing."""
+    image: str  # base64 jpeg
+    lat: float | None = None
+    lon: float | None = None
+    gps_accuracy: float | None = None  # meters
+
+
+class ClassifyResponse(BaseModel):
+    """The model's verdict on whether the photo shows a Flock camera."""
+    is_flock: bool
+    camera_type: str  # e.g. "Flock Safety Falcon", "Traffic camera", "Unknown"
+    confidence: float  # 0–1
+    message: str | None = None
+
+
 class FlockCamera(BaseModel):
     name: str
     latitude: float
