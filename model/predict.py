@@ -21,20 +21,21 @@ import time
 import joblib
 from PIL import Image, ImageOps
 
-from train_classifier import embed, load_clip
+from train_classifier import FeatureExtractor
 
 ACCEPT, REJECT = 0.80, 0.40   # >= ACCEPT: camera | < REJECT: not a camera | between: retake
 
 
 class FlockClassifier:
     def __init__(self, model_path="model_out/model.joblib"):
-        self.classifier = joblib.load(model_path)["classifier"]
-        self.clip, self.preprocess = load_clip()
+        bundle = joblib.load(model_path)
+        self.classifier = bundle["classifier"]
+        self.extract = FeatureExtractor(bundle.get("features", "clip"))
 
     def predict_image(self, img):
         t0 = time.perf_counter()
         img = ImageOps.exif_transpose(img).convert("RGB")
-        p = float(self.classifier.predict_proba(embed(self.clip, self.preprocess, [img]))[0, 1])
+        p = float(self.classifier.predict_proba(self.extract([img]))[0, 1])
         verdict = "camera" if p >= ACCEPT else "not_camera" if p < REJECT else "unsure_retake"
         return {"camera_probability": round(p, 3), "verdict": verdict,
                 "latency_ms": round(1000 * (time.perf_counter() - t0), 1)}

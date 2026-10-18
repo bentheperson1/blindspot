@@ -2,7 +2,12 @@
 """
 Train a Flock-camera photo classifier.
 
-  photo -> CLIP (pretrained, frozen) -> 512 numbers -> classifier -> P(camera)
+  photo -> feature extractor -> numbers -> classifier -> P(camera)
+
+Feature extractors (--features):
+  hog   (default) classic computer vision written in numpy: HOG edge/shape patterns
+        + color histograms. No PyTorch needed, so it runs natively on LinuxONE (s390x).
+  clip  pretrained CLIP ViT-B/32 (more accurate) - needs PyTorch, which has no s390x build.
 
 Folders:
   data/camera/      photos WITH a Flock/ALPR camera
@@ -11,11 +16,12 @@ Folders:
   together when testing so the accuracy isn't inflated.
 
 Run:
-  python train_classifier.py                   # logistic regression (default)
-  python train_classifier.py --head xgboost    # XGBoost instead
+  python train_classifier.py                         # HOG + logistic regression
+  python train_classifier.py --head xgboost          # HOG + XGBoost
+  python train_classifier.py --features clip         # CLIP (only where torch installs)
 
 Saves model_out/model.joblib, used by predict.py.
-Install: pip install torch open_clip_torch scikit-learn pillow joblib  (+ xgboost)
+Install (LinuxONE): pip install numpy pillow scikit-learn joblib   (+ xgboost)
 """
 
 import argparse
@@ -25,12 +31,42 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-import torch
 from PIL import Image, ImageOps
 
 EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+# ----------------------------------------------------------------- HOG features
+def hog_features(img, size=128, cell=8, bins=9):
+    """Histogram of Oriented Gradients + HSV color histogram, pure numpy."""
+    gray = np.asarray(img.convert("L").resize((size, size)), dtype=np.float32) / 255.0
+    gy, gx = np.gradient(gray)
+    mag = np.hypot(gx, gy)
+    ang = (np.degrees(np.arctan2(gy, gx)) + 180.0) % 180.0          # unsigned 0-180
+    b = np.minimum((ang / (180.0 / bins)).astype(int), bins - 1)
+
+    n = size // cell                                                  # 16 x 16 cells
+    cell_id = (np.arange(size) // cell)[:, None] * n + (np.arange(size) // cell)[None, :]
+    hist = np.zeros((n * n, bins), np.float32)
+    np.add.at(hist, (cell_id.ravel(), b.ravel()), mag.ravel())
+    hist = hist.reshape(n, n, bins)
+
+    blocks = []                                                       # 2x2-cell blocks, L2-Hys
+    for i in range(n - 1):
+        for j in range(n - 1):
+            v = hist[i:i + 2, j:j + 2].ravel()
+            v = v / (np.linalg.norm(v) + 1e-6)
+            v = np.minimum(v, 0.2)
+            blocks.append(v / (np.linalg.norm(v) + 1e-6))
+    hog = np.concatenate(blocks)
+
+    hsv = np.asarray(img.convert("HSV").resize((64, 64)), dtype=np.int32)
+    color, _ = np.histogramdd(hsv.reshape(-1, 3), bins=(8, 4, 4), range=((0, 256),) * 3)
+    color = color.ravel() / color.sum()
+    return np.concatenate([hog, color]).astype(np.float32)
+
+
+# ---------------------------------------------------------------- CLIP features
 def load_clip():
     import open_clip
     model, _, preprocess = open_clip.create_model_and_transforms(
@@ -39,8 +75,8 @@ def load_clip():
     return model, preprocess
 
 
-def embed(model, preprocess, images, batch_size=16):
-    """List of PIL images -> (n, 512) array of normalized CLIP features."""
+def clip_features(model, preprocess, images, batch_size=16):
+    import torch
     feats = []
     with torch.no_grad():
         for i in range(0, len(images), batch_size):
@@ -50,6 +86,19 @@ def embed(model, preprocess, images, batch_size=16):
     return np.concatenate(feats)
 
 
+class FeatureExtractor:
+    def __init__(self, kind):
+        self.kind = kind
+        if kind == "clip":
+            self.model, self.preprocess = load_clip()
+
+    def __call__(self, images):
+        if self.kind == "clip":
+            return clip_features(self.model, self.preprocess, images)
+        return np.stack([hog_features(im) for im in images])
+
+
+# ------------------------------------------------------------------- the rest
 def open_image(path):
     return ImageOps.exif_transpose(Image.open(path)).convert("RGB")
 
@@ -60,12 +109,16 @@ def make_classifier(kind):
         return XGBClassifier(n_estimators=300, max_depth=3, learning_rate=0.05,
                              subsample=0.8, colsample_bytree=0.3, eval_metric="logloss")
     from sklearn.linear_model import LogisticRegression
-    return LogisticRegression(class_weight="balanced", max_iter=2000)
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    return make_pipeline(StandardScaler(),
+                         LogisticRegression(class_weight="balanced", C=0.05, max_iter=5000))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data")
+    ap.add_argument("--features", choices=["hog", "clip"], default="hog")
     ap.add_argument("--head", choices=["logreg", "xgboost"], default="logreg")
     ap.add_argument("--out", default="model_out")
     args = ap.parse_args()
@@ -83,11 +136,12 @@ def main():
     y, groups = np.array(labels), np.array(groups)
     print(f"{len(y)} photos: {y.sum()} camera, {(1 - y).sum()} no_camera | machine={platform.machine()}")
 
-    # 2. photos -> CLIP features
-    model, preprocess = load_clip()
+    # 2. photos -> features
+    extract = FeatureExtractor(args.features)
     t0 = time.perf_counter()
-    X = embed(model, preprocess, [open_image(p) for p in paths])
-    print(f"CLIP features: {X.shape} in {time.perf_counter() - t0:.1f}s")
+    X = extract([open_image(p) for p in paths])
+    secs = time.perf_counter() - t0
+    print(f"{args.features} features: {X.shape} in {secs:.1f}s ({1000 * secs / len(y):.1f} ms/photo)")
 
     # 3. test accuracy on photos the classifier didn't train on (5-fold cross-validation)
     from sklearn.metrics import accuracy_score, classification_report
@@ -96,13 +150,14 @@ def main():
     for train, test in StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=0).split(X, y, groups):
         clf = make_classifier(args.head).fit(X[train], y[train])
         preds[test] = clf.predict(X[test])
-    print(f"\nCross-validated accuracy ({args.head}): {accuracy_score(y, preds):.3f}")
+    print(f"\nCross-validated accuracy ({args.features} + {args.head}): {accuracy_score(y, preds):.3f}")
     print(classification_report(y, preds, target_names=["no_camera", "camera"], digits=3))
 
     # 4. train the final model on all photos and save it
     clf = make_classifier(args.head).fit(X, y)
     Path(args.out).mkdir(exist_ok=True)
-    joblib.dump({"head": args.head, "classifier": clf}, Path(args.out) / "model.joblib")
+    joblib.dump({"features": args.features, "head": args.head, "classifier": clf},
+                Path(args.out) / "model.joblib")
     print(f"Saved {args.out}/model.joblib")
 
 
