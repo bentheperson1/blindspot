@@ -59,7 +59,7 @@ def camera_heading(alpha, beta, gamma):
     fwd = get_rotation_matrix(alpha, beta, gamma) @ np.array([0.0, 0.0, -1.0])
     return np.degrees(np.arctan2(fwd[0], fwd[1])) % 360
 
-def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCoordinates: List[FlockCamera], screen_w=1080, screen_h=1920, hfov=53):
+def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCoordinates: List[FlockCamera], screen_w=1080.0, screen_h=1920.0, hfov=53.0):
     results = []
 
     for camera in flockCoordinates:
@@ -70,7 +70,7 @@ def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCo
         xc, yc, zc = dev[0], -dev[1], -dev[2]
 
         if zc <= 0:
-            return [None, None]
+            continue
 
         fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
         xs = xc * fx / zc + screen_w / 2.0

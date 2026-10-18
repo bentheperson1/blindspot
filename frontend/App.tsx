@@ -1,47 +1,138 @@
-import { StatusBar as SystemStatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { checkHealth, fetchCameras } from './src/api';
-import { RadiusSlider } from './src/components/RadiusSlider';
-import { StatusBar } from './src/components/StatusBar';
-import { CAMERA_REFRESH_MS } from './src/config';
-import { ARScreen } from './src/screens/ARScreen';
-import { MapScreen } from './src/screens/MapScreen';
-import { Segmented, SettingsScreen } from './src/screens/SettingsScreen';
-import { useTelemetry } from './src/sensors';
-import { SettingsProvider, useSettings } from './src/settings';
-import { colors, radii } from './src/theme';
-import type { BackendStatus, Camera } from './src/types';
+import {
+  Archivo_400Regular,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+  Archivo_800ExtraBold,
+  useFonts,
+} from "@expo-google-fonts/archivo";
+import { StatusBar as SystemStatusBar } from "expo-status-bar";
+import { useEffect, useState } from "react";
+import {
+  Image,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { checkHealth, fetchCameras } from "./src/api";
+import { NearbySheet } from "./src/components/NearbySheet";
+import { CompassBadge, TAB_BAR_H, TabBar, type Tab } from "./src/components/ui";
+import { CAMERA_REFRESH_MS } from "./src/config";
+import { ARScreen } from "./src/screens/ARScreen";
+import { MapScreen } from "./src/screens/MapScreen";
+import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { useTelemetry } from "./src/sensors";
+import { SettingsProvider, useSettings } from "./src/settings";
+import {
+  BORDER,
+  fonts,
+  radii,
+  ThemeProvider,
+  useColors,
+  useThemedStyles,
+  type Palette,
+} from "./src/theme";
+import type { BackendStatus, Camera } from "./src/types";
+
+const TOP_BAR_H = 40;
+
+// Loading screen: the blindspot logo on its own navy, shown for at least this long while fonts and settings load.
+const LOADING_MIN_MS = 1500;
+const LOADING_BG = "#151627"; // the logo's background, so the image edges disappear
+const LOGO = require("./assets/logo.png");
+
+function LoadingScreen() {
+  const { width, height } = useWindowDimensions();
+  const size = Math.min(width, height);
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: LOADING_BG,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Image
+        source={LOGO}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+        accessible
+        accessibilityLabel="blindspot"
+      />
+    </View>
+  );
+}
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Archivo_400Regular,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    Archivo_800ExtraBold,
+  });
+  const [minTimeDone, setMinTimeDone] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeDone(true), LOADING_MIN_MS);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <SafeAreaProvider>
       <SettingsProvider>
-        <Main />
+        <ThemeProvider>
+          <Root ready={fontsLoaded && minTimeDone} />
+        </ThemeProvider>
       </SettingsProvider>
     </SafeAreaProvider>
   );
 }
 
+function Root({ ready }: { ready: boolean }) {
+  const settings = useSettings();
+  if (!ready || !settings.loaded) return <LoadingScreen />;
+  return <Main />;
+}
+
 function Main() {
   const settings = useSettings();
-  const { position, permission, snapshot } = useTelemetry();
+  const colors = useColors();
+  const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { position, heading, permission, snapshot } = useTelemetry();
   const [cameras, setCameras] = useState<Camera[]>([]);
-  const [backend, setBackend] = useState<BackendStatus>('off');
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [backend, setBackend] = useState<BackendStatus>("off");
+  const [sheetHeight, setSheetHeight] = useState(320);
+  // Tabs: Map and Camera are remembered between launches (settings.view); Settings is just a screen.
+  const [tab, setTab] = useState<Tab>(settings.view);
+  const goTo = (t: Tab) => {
+    setTab(t);
+    if (t !== "settings" && t !== settings.view) settings.update({ view: t });
+  };
+
+  const topBarTop = insets.top + 8;
+  const belowTopBar = topBarTop + TOP_BAR_H;
+  const tabBarH = TAB_BAR_H + insets.bottom;
 
   // Map view: ask the backend which cameras are near the phone. It filters, sorts and flags alerts.
   useEffect(() => {
-    if (!settings.loaded || settings.view !== 'map' || !position) return;
+    if (tab !== "map" || !position) return;
     let cancelled = false;
     const load = async () => {
       const [alive, cams] = await Promise.all([
         checkHealth(settings.apiUrl),
-        fetchCameras(settings.apiUrl, { lat: position.latitude, lon: position.longitude, radius_m: settings.radius, mode: settings.mode }),
+        fetchCameras(settings.apiUrl, {
+          lat: position.latitude,
+          lon: position.longitude,
+          radius_m: settings.radius,
+          mode: settings.mode,
+        }),
       ]);
       if (cancelled) return;
-      setBackend(alive ? 'ok' : 'error');
+      setBackend(alive ? "ok" : "error");
       setCameras(cams);
     };
     load();
@@ -50,89 +141,95 @@ function Main() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [settings.loaded, settings.view, settings.apiUrl, settings.radius, settings.mode, position?.latitude, position?.longitude]);
+  }, [
+    tab,
+    settings.apiUrl,
+    settings.radius,
+    settings.mode,
+    position?.latitude,
+    position?.longitude,
+  ]);
 
   return (
     <View style={styles.root}>
-      <SystemStatusBar style="light" />
+      <SystemStatusBar style={colors.scheme === "dark" ? "light" : "dark"} />
 
-      {settings.view === 'map' ? (
-        <MapScreen position={position} cameras={cameras} />
-      ) : (
-        <ARScreen snapshot={snapshot} onBackendStatus={setBackend} />
+      {tab === "map" && (
+        <>
+          <MapScreen
+            position={position}
+            cameras={cameras}
+            controlsTop={belowTopBar + 12}
+            recenterBottom={tabBarH + sheetHeight + 12}
+          />
+          <NearbySheet
+            cameras={cameras}
+            backend={backend}
+            bottom={tabBarH}
+            onLookAround={() => goTo("ar")}
+            onLayoutHeight={setSheetHeight}
+          />
+        </>
       )}
+      {tab === "ar" && (
+        <ARScreen
+          snapshot={snapshot}
+          onBackendStatus={setBackend}
+          topInset={belowTopBar}
+          bottomInset={tabBarH}
+        />
+      )}
+      {tab === "settings" && <SettingsScreen bottomInset={tabBarH} />}
 
-      {/* Top: Map / AR toggle + settings */}
-      <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
-        <View style={styles.topRow}>
-          <View style={styles.toggle}>
-            <Segmented
-              options={[
-                { value: 'map', label: 'Map' },
-                { value: 'ar', label: 'AR' },
-              ]}
-              value={settings.view}
-              onChange={(view) => settings.update({ view })}
-            />
-          </View>
-          <Pressable style={styles.gear} onPress={() => setSettingsOpen(true)} hitSlop={8} accessibilityLabel="Settings">
-            <Text style={styles.gearText}>⚙︎</Text>
-          </Pressable>
+      {/* Compass, top right, on the Map and Camera tabs */}
+      {tab !== "settings" && (
+        <View
+          style={[styles.topBar, { top: topBarTop }]}
+          pointerEvents="box-none"
+        >
+          <CompassBadge heading={heading} />
         </View>
-        {permission === 'denied' && (
-          <View style={styles.banner}>
-            <Text style={styles.bannerText}>Location is off. Enable it in system settings so the backend gets your position.</Text>
-          </View>
-        )}
-      </SafeAreaView>
-
-      {/* Bottom (map only): radius slider + status bar. AR view has its own detector readout. */}
-      {settings.view === 'map' && (
-        <SafeAreaView edges={['bottom']} style={styles.bottom} pointerEvents="box-none">
-          <View style={styles.sliderCard}>
-            <RadiusSlider compact />
-          </View>
-          <StatusBar cameras={cameras} backend={backend} />
-        </SafeAreaView>
       )}
 
-      <SettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {permission === "denied" && tab !== "settings" && (
+        <View style={[styles.banner, { top: belowTopBar + 12 }]}>
+          <Text style={styles.bannerText}>
+            Location is off. Turn it on in your phone's settings so the server
+            knows where you are.
+          </Text>
+        </View>
+      )}
+
+      <TabBar value={tab} onChange={goTo} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 8 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
-  toggle: {
-    flex: 1,
-    backgroundColor: 'rgba(22,27,34,0.94)',
-    borderRadius: radii.md,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  gear: {
-    width: 46,
-    height: 46,
-    borderRadius: radii.md,
-    backgroundColor: 'rgba(22,27,34,0.94)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gearText: { color: colors.text, fontSize: 22 },
-  banner: { backgroundColor: 'rgba(242,169,59,0.95)', borderRadius: radii.sm, padding: 10 },
-  bannerText: { color: '#2B1A00', fontSize: 13, fontWeight: '600' },
-  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, paddingBottom: 8, gap: 10 },
-  sliderCard: {
-    backgroundColor: 'rgba(22,27,34,0.94)',
-    borderRadius: radii.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-});
+const makeStyles = (c: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: c.paper },
+    topBar: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+    },
+    banner: {
+      position: "absolute",
+      left: 16,
+      right: 72,
+      backgroundColor: c.surface,
+      borderRadius: radii.tile,
+      borderWidth: BORDER,
+      borderColor: c.outline,
+      padding: 12,
+    },
+    bannerText: {
+      fontFamily: fonts.sansBold,
+      color: c.ink,
+      fontSize: 14,
+      lineHeight: 19,
+    },
+  });

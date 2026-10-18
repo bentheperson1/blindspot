@@ -25,7 +25,7 @@ def health_check():
     return {"status": "ok"}
 
 
-@router.get("/getall")
+@router.post("/getall")
 def get_all_cameras(info: InputInfo):
     try:
         return _project(info, camera_store.all_cameras())

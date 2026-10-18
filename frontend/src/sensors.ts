@@ -1,9 +1,21 @@
 import * as Location from 'expo-location';
 import { DeviceMotion, Magnetometer, type DeviceMotionMeasurement } from 'expo-sensors';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LatLng } from './types';
 
-/** (keep your original doc comment here) */
+/**
+ * Raw phone telemetry, passed to the backend as-is. No processing happens on the phone.
+ *
+ * location       full GPS fix: latitude, longitude, altitude, accuracy, heading (course), speed
+ * compass        expo-location heading: magHeading, trueHeading (degrees), accuracy
+ * motion         expo-sensors DeviceMotion:
+ *                  rotation {alpha, beta, gamma}            device orientation, radians
+ *                  rotationRate {alpha, beta, gamma}        gyroscope, deg/s
+ *                  acceleration {x, y, z}                   m/s², gravity removed
+ *                  accelerationIncludingGravity {x, y, z}   m/s²
+ *                  orientation                              screen orientation: 0, 90, -90, 180
+ * magnetometer   raw magnetic field {x, y, z}, μT
+ */
 export type Telemetry = {
   location: Location.LocationObjectCoords | null;
   locationTimestamp: number | null;
@@ -12,31 +24,23 @@ export type Telemetry = {
   magnetometer: { x: number; y: number; z: number; timestamp: number } | null;
 };
 
-const SENSOR_INTERVAL_MS = 10;
+const SENSOR_INTERVAL_MS = 100;
 
+/**
+ * Starts every sensor once and keeps the latest readings in a ref.
+ * `snapshot()` returns them for the frame upload; `position` is React state for the map.
+ */
 export function useTelemetry() {
   const latest = useRef<Telemetry>({ location: null, locationTimestamp: null, compass: null, motion: null, magnetometer: null });
   const [position, setPosition] = useState<LatLng | null>(null);
   const [permission, setPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  // Heading for the compass badge. Updated at most 4×/s and only on a 2° change, so it doesn't re-render constantly.
+  const [heading, setHeading] = useState<number | null>(null);
+  const lastHeading = useRef({ value: -999, at: 0 });
 
   useEffect(() => {
     const subs: { remove: () => void }[] = [];
     let cancelled = false;
-
-    // if cleanup already ran while an await was pending, remove the subscription immediately
-    const track = (sub: { remove: () => void }) => {
-      if (cancelled) {
-        sub.remove();
-      } else {
-        subs.push(sub);
-      }
-    };
-
-    const applyFix = (l: Location.LocationObject) => {
-      latest.current.location = l.coords;
-      latest.current.locationTimestamp = Math.round(l.timestamp);
-      setPosition({ latitude: l.coords.latitude, longitude: l.coords.longitude });
-    };
 
     (async () => {
       const loc = await Location.requestForegroundPermissionsAsync();
@@ -44,41 +48,41 @@ export function useTelemetry() {
       setPermission(loc.status === 'granted' ? 'granted' : 'denied');
 
       if (loc.status === 'granted') {
-        // seed so the first frames aren't sent with location: null
-        const last = await Location.getLastKnownPositionAsync().catch(() => null);
-        if (cancelled) return;
-        if (last) applyFix(last);
-
-        track(
+        subs.push(
           await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 0, timeInterval: 1000 },
-            applyFix,
+            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 1000 },
+            (l) => {
+              latest.current.location = l.coords;
+              latest.current.locationTimestamp = l.timestamp;
+              setPosition({ latitude: l.coords.latitude, longitude: l.coords.longitude });
+            },
           ),
         );
-        track(await Location.watchHeadingAsync((h) => (latest.current.compass = h)));
+        subs.push(
+          await Location.watchHeadingAsync((h) => {
+            latest.current.compass = h;
+            const value = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+            const now = Date.now();
+            const diff = Math.abs(((value - lastHeading.current.value + 540) % 360) - 180);
+            if (now - lastHeading.current.at > 250 && diff >= 2) {
+              lastHeading.current = { value, at: now };
+              setHeading(value);
+            }
+          }),
+        );
       }
-
-      if (cancelled) return;
 
       if (await DeviceMotion.isAvailableAsync()) {
-        const motionPerm = await DeviceMotion.requestPermissionsAsync().catch(() => null);
-        if (cancelled) return;
-
-        if (motionPerm?.granted !== false) {
-          DeviceMotion.setUpdateInterval(SENSOR_INTERVAL_MS);
-          track(DeviceMotion.addListener((m) => (latest.current.motion = m)));
-        }
+        await DeviceMotion.requestPermissionsAsync().catch(() => {});
+        DeviceMotion.setUpdateInterval(SENSOR_INTERVAL_MS);
+        subs.push(DeviceMotion.addListener((m) => (latest.current.motion = m)));
       }
-
-      if (cancelled) return;
 
       if (await Magnetometer.isAvailableAsync()) {
         Magnetometer.setUpdateInterval(SENSOR_INTERVAL_MS);
-        track(Magnetometer.addListener((m) => (latest.current.magnetometer = m)));
+        subs.push(Magnetometer.addListener((m) => (latest.current.magnetometer = m)));
       }
-    })().catch(() => {
-      // a failed sensor shouldn't masquerade as a denied location permission
-    });
+    })().catch(() => setPermission('denied'));
 
     return () => {
       cancelled = true;
@@ -87,7 +91,7 @@ export function useTelemetry() {
   }, []);
 
   /** Copy of the latest readings, safe to serialize. */
-  const snapshot = useCallback((): Telemetry => JSON.parse(JSON.stringify(latest.current)), []);
+  const snapshot = (): Telemetry => JSON.parse(JSON.stringify(latest.current));
 
-  return { position, permission, snapshot };
+  return { position, heading, permission, snapshot };
 }
