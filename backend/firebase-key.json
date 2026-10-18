@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "felixdatathon2026",
+  "private_key_id": "c380b802664d0c2a9ba779339b4b97e5ac49844d",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDF3E3KRcud7nxZ\n3Zscy2/PzXBdvSsjbnwMo1hm42SEQeXlaU9F197jjREB0X2nvYe6vvODa63o8avI\nlXl2g2WE2ywn/BvpnoNs6+6B3YwxBP99NQt44KYmjStRvuOdD9S3gurLd92h/1r8\nHDlpReqS9FlXOXfWQuCiH1oqUaqwGn07ndWwnTMBPw2DRxD42EVXL8nPgLc9Xnf1\nR6Th1hnesz4CyCoyL9c1kFk0smK+vblberJokcIvGBR9sh4H3dVyF9NWaQiWOsFU\nRow9T167XzBUSmG+Um5yeHwdzHp5GbW1w9dRSymx/QzdOhFlT/Bl0ZfKqz/PdGj6\nUqmGz90/AgMBAAECggEATIxmACqukyRwMahd2W8PjBrULUABj4ywK4eKrQuumMiR\n9AahJ8lTrz+lY8mzzpCyEVrNBXxEZUoShuDlhCdjwFm3JKUR+3lbKWnB9bZMBa8E\nVWGPVa28OlAFgXPTxbEZQAJDaoKuWX1cqwsUXxkwnrgwVGGkbl2jYLW2gYbk/Yoj\n3enVHa/uyxCvXkfrvkk4YJ5/y+NG2wSVzDP+dFVZ+h7hA79cSBN06Wb7tvVrJkmY\n49hFqIlpqPGkEgkvT1SXS1hcuHKcetxt8ZHj7Cu6jGDO7vbMewnO+JiWIXnqh8Fe\nx1nk7x3SdIa1wjBxU1SPrB1nEctAtbQSJ7MNuh+UIQKBgQDkG183CyfOrJR6D93q\nzOEwani7auPsuYF7hud/wuFjVNPdduq0rwZ9HrC7dNiaDA/rePN/UGeZ16RFB2hP\nGe73ckmmeb2Wsgt83ccC+8bcTX5jioxAPi87HNDTGDZIeXnW4PHMc6819Ljhn+Wm\nvEhdhkg6nUboQvPHTlWXNZWOUQKBgQDeDhqf++KcxVmWKDVIUQKTOZolN7OxXIW2\ncYcfFwWcleEAVt/Kgu6UXlanfkWTEVEyOH/QWe7y79uiRdeU6LQ60XSJZkX247Nv\nK++vPSeimyhsGuRaKhnpWj5GPvH2p2Qc+phjSB74Y+39xoVMoAZIBSK62hJC6/+j\ncOk8ysH+jwKBgH4OZlLr1kbPdonx5MhSCowP+sJPsr9qUJTsG1iuYJHdGewEQHYz\nVxmj8TTWwLB4w/9z6tRLocURt1TyYAF+qmGShgL6ufviTpjlkooii2XJaXQm55TF\nCKLZLMnLUoxAnUVTMCy1LXla0STWkTnQSQluINJLghjujvtwXbpfQVPRAoGBAJty\n9jKfS/IBugiDV2GrzIiyX3XEe9gi9DxXV4dtP3Fx/xSUvI/xfwGA1Vrl6+Db06K7\nqMZ73upU/cWo7RWCnoE6lkGFxl7i4n9mG6Hqxu9vfSnI3ak9JeyVT1kvwYWxg0VC\nLSH7oCq1EiuBKVoOALe0WK7D8NrGiayqY606J/qDAoGAYmfWps9tKwvg+3tAJh3T\nM6rEVz+L1dENQEPxlQWsedp6lHPZoyDtoEGbGRF2T9Espe/otWZvjxYcRFLxCsj+\nQcIh6JhPakXDLXVe58SPTrXPlDhmprbF1M+M4Ce9+OqSkuN1QAQt1NJ05w+wLYXv\nlEpXlC8UaRGihrtivXq49YA=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@felixdatathon2026.iam.gserviceaccount.com",
+  "client_id": "108832141486734143756",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40felixdatathon2026.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
