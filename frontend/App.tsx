@@ -7,21 +7,15 @@ import {
 } from "@expo-google-fonts/archivo";
 import { StatusBar as SystemStatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import {
-  Image,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { checkHealth, fetchCameras } from "./src/api";
 import { NearbySheet } from "./src/components/NearbySheet";
+import { StartupAnimation } from "./src/components/StartupAnimation";
 import { CompassBadge, TAB_BAR_H, TabBar, type Tab } from "./src/components/ui";
-import { CAMERA_REFRESH_MS } from "./src/config";
+import { useMapCameras } from "./src/cameraList";
 import { ARScreen } from "./src/screens/ARScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
@@ -36,37 +30,13 @@ import {
   useThemedStyles,
   type Palette,
 } from "./src/theme";
-import type { BackendStatus, Camera } from "./src/types";
+import type { BackendStatus } from "./src/types";
 
 const TOP_BAR_H = 40;
 
-// Loading screen: the blindspot logo on its own navy, shown for at least this long while fonts and settings load.
-const LOADING_MIN_MS = 1500;
-const LOADING_BG = "#151627"; // the logo's background, so the image edges disappear
-const LOGO = require("./assets/logo.png");
-
-function LoadingScreen() {
-  const { width, height } = useWindowDimensions();
-  const size = Math.min(width, height);
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: LOADING_BG,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Image
-        source={LOGO}
-        style={{ width: size, height: size }}
-        resizeMode="contain"
-        accessible
-        accessibilityLabel="blindspot"
-      />
-    </View>
-  );
-}
+// Startup: an animated version of the logo (src/components/StartupAnimation.tsx) plays while fonts and
+// settings load, then fades into the app.
+const LOADING_BG = "#151627";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -75,26 +45,36 @@ export default function App() {
     Archivo_700Bold,
     Archivo_800ExtraBold,
   });
-  const [minTimeDone, setMinTimeDone] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setMinTimeDone(true), LOADING_MIN_MS);
-    return () => clearTimeout(t);
-  }, []);
   return (
     <SafeAreaProvider>
       <SettingsProvider>
         <ThemeProvider>
-          <Root ready={fontsLoaded && minTimeDone} />
+          <Root fontsLoaded={fontsLoaded} />
         </ThemeProvider>
       </SettingsProvider>
     </SafeAreaProvider>
   );
 }
 
-function Root({ ready }: { ready: boolean }) {
+function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
   const settings = useSettings();
-  if (!ready || !settings.loaded) return <LoadingScreen />;
-  return <Main />;
+  const appReady = fontsLoaded && settings.loaded;
+  const [introPlayed, setIntroPlayed] = useState(false); // logo finished animating
+  const [introDone, setIntroDone] = useState(false); // intro faded out
+  return (
+    <View style={{ flex: 1, backgroundColor: LOADING_BG }}>
+      {/* The app mounts underneath once the logo has played, so the intro can fade straight into it. */}
+      {appReady && introPlayed && <Main />}
+      {!introDone && (
+        <StartupAnimation
+          appReady={appReady}
+          fontsLoaded={fontsLoaded}
+          onPlayed={() => setIntroPlayed(true)}
+          onDone={() => setIntroDone(true)}
+        />
+      )}
+    </View>
+  );
 }
 
 function Main() {
@@ -103,7 +83,6 @@ function Main() {
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { position, heading, permission, snapshot } = useTelemetry();
-  const [cameras, setCameras] = useState<Camera[]>([]);
   const [backend, setBackend] = useState<BackendStatus>("off");
   const [sheetHeight, setSheetHeight] = useState(320);
   // Tabs: Map and Camera are remembered between launches (settings.view); Settings is just a screen.
@@ -117,38 +96,16 @@ function Main() {
   const belowTopBar = topBarTop + TOP_BAR_H;
   const tabBarH = TAB_BAR_H + insets.bottom;
 
-  // Map view: ask the backend which cameras are near the phone. It filters, sorts and flags alerts.
-  useEffect(() => {
-    if (tab !== "map" || !position) return;
-    let cancelled = false;
-    const load = async () => {
-      const [alive, cams] = await Promise.all([
-        checkHealth(settings.apiUrl),
-        fetchCameras(settings.apiUrl, {
-          lat: position.latitude,
-          lon: position.longitude,
-          radius_m: settings.radius,
-          mode: settings.mode,
-        }),
-      ]);
-      if (cancelled) return;
-      setBackend(alive ? "ok" : "error");
-      setCameras(cams);
-    };
-    load();
-    const t = setInterval(load, CAMERA_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [
-    tab,
+  // Map view: the same /cameras/list cache as the Camera tab (every 30 s walking / 5 s driving).
+  // Distances update from live GPS on the phone; only cameras inside the radius are shown.
+  const map = useMapCameras(
+    tab === "map",
     settings.apiUrl,
+    position,
     settings.radius,
     settings.mode,
-    position?.latitude,
-    position?.longitude,
-  ]);
+  );
+  const cameras = map.cameras;
 
   return (
     <View style={styles.root}>
@@ -164,7 +121,7 @@ function Main() {
           />
           <NearbySheet
             cameras={cameras}
-            backend={backend}
+            backend={map.status}
             bottom={tabBarH}
             onLookAround={() => goTo("ar")}
             onLayoutHeight={setSheetHeight}

@@ -36,3 +36,19 @@ def get_all_cameras(info: InputInfo):
 @router.post("/nearby")
 def nearby(info: LocationInputInfo):
     return _project(info, camera_store.cameras_within(info.lat_p, info.lon_p, info.radius))
+
+
+class ListRequest(BaseModel):
+    lat_p: float
+    lon_p: float
+    radius: float
+
+
+@router.post("/list")
+def list_nearby(req: ListRequest):
+    """Raw cameras (name, lat, lon, heading) within `radius` meters. Read from the in-memory cache, not Firestore.
+    The phone caches this list (30 s walking / 5 s driving) and places the markers itself."""
+    return [
+        {"name": c.name, "latitude": c.latitude, "longitude": c.longitude, "heading": c.heading}
+        for c in camera_store.cameras_within(req.lat_p, req.lon_p, req.radius)
+    ]

@@ -1,3 +1,4 @@
+import type { CachedCamera } from './projection';
 import type { Telemetry } from './sensors';
 import type { Camera, Detection, TravelMode } from './types';
 
@@ -337,6 +338,46 @@ export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): 
     });
   });
   return { onScreen: out, inRange: list.filter((c) => c && typeof c === 'object').length };
+}
+
+/**
+ * POST /cameras/list -> raw cameras { name, latitude, longitude, heading } within `radius_m` of the phone.
+ * The Camera tab caches this and projects markers on the phone. Throws `NoListEndpoint` on 404 (older backend),
+ * so the app can fall back to calling /cameras/nearby.
+ */
+export class NoListEndpoint extends Error {}
+
+export async function fetchCameraList(apiUrl: string, lat: number, lon: number, radius_m: number): Promise<CachedCamera[]> {
+  const url = `${apiUrl.trim().replace(/\/+$/, '')}/cameras/list`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NEARBY_TIMEOUT_MS);
+  try {
+    console.log('[list] ->', url, radius_m);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'bypass-tunnel-reminder': '1' },
+      body: JSON.stringify({ lat_p: lat, lon_p: lon, radius: radius_m }),
+      signal: controller.signal,
+    });
+    if (res.status === 404) throw new NoListEndpoint('backend has no /cameras/list');
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
+    const json = JSON.parse(text) as unknown;
+    const list = Array.isArray(json) ? json : [];
+    const cams: CachedCamera[] = [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      const o = raw as Record<string, unknown>;
+      const latitude = pickNum(o, ['latitude', 'lat']);
+      const longitude = pickNum(o, ['longitude', 'lon', 'lng']);
+      if (latitude == null || longitude == null) continue;
+      cams.push({ name: String(o.name ?? 'Flock camera'), latitude, longitude, heading: pickNum(o, ['heading']) ?? undefined });
+    }
+    console.log('[list] <-', cams.length, 'cameras');
+    return cams;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function checkHealth(apiUrl: string): Promise<boolean> {
