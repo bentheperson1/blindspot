@@ -1,4 +1,5 @@
 import base64
+import logging
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
@@ -9,6 +10,8 @@ from app.services import camera_store, vision
 from app.services.classifier import describe
 
 router = APIRouter(prefix="/images", tags=["images"])
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def check_size(data: bytes):
@@ -59,15 +62,26 @@ async def process_base64(payload: UserMessage, request: Request):
     if telemetry.location is None:
         return Base64ImageResponse(telemetry=telemetry, dots=[], **classification)
 
-    def build_points():
-        cameras = camera_store.cameras_within(
+    # Firebase is optional: without it (or if Firestore errors) there are no dots, but the
+    # classifier fields are still returned.
+    try:
+        cameras = await run_in_threadpool(
+            camera_store.cameras_within,
             telemetry.location.latitude,
             telemetry.location.longitude,
-            payload.radius_m,
+            payload.radius_m or payload.settings.radius_m,
         )
-        return vision.process_sent_data(cameras, payload.camera_width, payload.camera_height, telemetry)
- 
-    points = await run_in_threadpool(build_points)
+    except camera_store.CameraStoreUnavailable:
+        cameras = []
+    except Exception:
+        logger.warning("Could not load cameras from Firestore", exc_info=True)
+        cameras = []
+
+    points = []
+    if cameras:
+        points = await run_in_threadpool(
+            vision.process_sent_data, cameras, payload.camera_width, payload.camera_height, telemetry
+        )
 
     dots = []
     for p in points or []:

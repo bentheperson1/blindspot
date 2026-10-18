@@ -35,4 +35,8 @@ def get_all_cameras(info: InputInfo):
 
 @router.post("/nearby")
 def nearby(info: LocationInputInfo):
-    return _project(info, camera_store.cameras_within(info.lat_p, info.lon_p, info.radius))
+    try:
+        cameras = camera_store.cameras_within(info.lat_p, info.lon_p, info.radius)
+    except camera_store.CameraStoreUnavailable as exc:
+        raise HTTPException(503, "Camera database (Firebase) is not configured.") from exc
+    return _project(info, cameras)
