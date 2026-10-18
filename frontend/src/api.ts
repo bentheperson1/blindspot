@@ -34,6 +34,25 @@ export type FramePayload = {
   frame?: string;
   timestamp: number;
   extra: Record<string, unknown>;
+} & UserMessageFields;
+
+/**
+ * Fields the backend's POST /images/process-base64 actually validates (UserMessage in
+ * backend/app/schemas/vision.py). Raw Expo sensor objects, rotation in radians, ints where the schema says int.
+ * Sent alongside the fields above in the same body; Pydantic ignores whatever it doesn't use.
+ */
+type UserMessageFields = {
+  camera_width: number;
+  camera_height: number;
+  ts: number; // unix ms, int
+  monotonic_ms: number;
+  location: Telemetry['location'];
+  locationTimestamp: number | null; // int ms
+  compass: { magHeading: number; trueHeading: number | null; accuracy: number | null } | null;
+  motion: Telemetry['motion'];
+  magnetometer: Telemetry['magnetometer'];
+  settings: { radius_m: number; mode: TravelMode };
+  radius_m: number;
 };
 
 // Backend URL paths.
@@ -51,9 +70,13 @@ export const PATHS = {
  */
 export const SEND_LEGACY_IMAGE_FIELD = true;
 
+/** A camera the backend placed in the frame: x/y are 0–1 within the camera view, distance in meters. */
+export type FrameDot = { name: string; x: number; y: number; distance_to_user: number };
+
 export type FrameResult = {
   image?: string; // processed frame from the backend, base64 jpeg
   detections: Detection[];
+  dots?: FrameDot[]; // from /images/process-base64 (Base64ImageResponse.dots)
   alert?: boolean;
   message?: string;
 };
@@ -141,6 +164,18 @@ export function buildPayload(
     yaw,
     heading_accuracy: HEADING_ACCURACY_DEG[Math.round(compass.accuracy)] ?? null,
     timestamp: capture.timestampSec,
+    // UserMessage fields for /images/process-base64
+    camera_width: Math.round(frame?.cameraWidth ?? 0),
+    camera_height: Math.round(frame?.cameraHeight ?? 0),
+    ts: Math.round(capture.timestampSec * 1000),
+    monotonic_ms: capture.monotonicMs,
+    location: loc,
+    locationTimestamp: telemetry.locationTimestamp != null ? Math.round(telemetry.locationTimestamp) : null,
+    compass: { magHeading: compass.magHeading, trueHeading: compass.trueHeading, accuracy: compass.accuracy },
+    motion: telemetry.motion,
+    magnetometer: telemetry.magnetometer,
+    settings: context.settings,
+    radius_m: context.settings.radius_m,
     extra: {
       platform: context.platform,
       monotonic_ms: capture.monotonicMs,
@@ -156,8 +191,9 @@ export function buildPayload(
 export async function sendFrame(apiUrl: string, payload: FramePayload): Promise<FrameResult> {
   const body = JSON.stringify(SEND_LEGACY_IMAGE_FIELD && payload.frame ? { ...payload, image: payload.frame } : payload);
   const res = await request(`${base(apiUrl)}${PATHS.frame}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
-  const json = (await res.json()) as Partial<FrameResult>;
-  return { image: json.image, detections: json.detections ?? [], alert: json.alert, message: json.message };
+  const json = (await res.json()) as Partial<FrameResult> & Record<string, unknown>;
+  const dots = Array.isArray((json as { dots?: unknown }).dots) ? ((json as { dots: FrameDot[] }).dots) : [];
+  return { image: json.image, detections: json.detections ?? [], dots, alert: json.alert, message: json.message };
 }
 
 /**
@@ -209,10 +245,11 @@ export function buildNearbyRequest(
     beta: rot.beta * RAD_TO_DEG,
     gamma: rot.gamma * RAD_TO_DEG,
     compass_heading: compass.trueHeading >= 0 ? compass.trueHeading : compass.magHeading,
-    screen_w: view.width,
-    screen_h: view.height,
-    hfov: view.hfov,
-    radius: radius_m,
+    // The backend schema (InputInfo / LocationInputInfo) declares these as int; decimals get a 422.
+    screen_w: Math.round(view.width),
+    screen_h: Math.round(view.height),
+    hfov: Math.round(view.hfov),
+    radius: Math.round(radius_m),
   };
 }
 
@@ -226,8 +263,8 @@ const pickNum = (o: Record<string, unknown>, keys: string[]): number | null => {
 
 /**
  * Calls POST /cameras/nearby and returns the cameras that land on screen.
- * Accepts a plain list or { cameras: [...] }, and the common names for the screen position
- * (x/y, screen_x/screen_y, px/py, u/v). Entries marked not visible, or without a position, are skipped.
+ * The backend (project_to_screen) returns a list of { name, x, y, distance_to_user } with x/y as 0–1 fractions
+ * of the screen. Off-screen entries and nulls (e.g. its [None, None] when a camera is behind you) are skipped.
  */
 export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): Promise<ScreenCamera[]> {
   const res = await request(
@@ -242,21 +279,20 @@ export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): 
     if (!raw || typeof raw !== 'object') return;
     const o = raw as Record<string, unknown>;
     if (o.visible === false || o.on_screen === false || o.in_view === false) return;
-    let x = pickNum(o, ['x', 'screen_x', 'px', 'u']);
-    let y = pickNum(o, ['y', 'screen_y', 'py', 'v']);
-    if (x == null || y == null) return;
-    // If the backend sent fractions of the screen (0–1), turn them into points.
-    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
-      x *= body.screen_w;
-      y *= body.screen_h;
-    }
+    const nx = pickNum(o, ['x', 'screen_x', 'px', 'u']);
+    const ny = pickNum(o, ['y', 'screen_y', 'py', 'v']);
+    if (nx == null || ny == null) return;
+    // project_to_screen returns x/y as fractions of the screen (0–1). Outside that range = off screen.
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    const x = nx * body.screen_w;
+    const y = ny * body.screen_h;
     const cam = (o.camera && typeof o.camera === 'object' ? o.camera : o) as Record<string, unknown>;
     out.push({
       key: String(cam.id ?? o.id ?? i),
       x,
       y,
       label: String(cam.name ?? cam.label ?? o.name ?? 'Flock camera'),
-      distance_m: pickNum(o, ['distance_m', 'distance', 'dist_m']) ?? pickNum(cam, ['distance_m', 'distance']),
+      distance_m: pickNum(o, ['distance_to_user', 'distance_m', 'distance', 'dist_m']) ?? pickNum(cam, ['distance_m', 'distance']),
     });
   });
   return out;
@@ -293,7 +329,20 @@ async function request(url: string, init: RequestInit, ms: number) {
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
     const res = await fetch(url, { ...init, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // Include the server's reason (FastAPI puts it in `detail`) so errors are readable on screen.
+      let reason = '';
+      try {
+        const text = await res.text();
+        try {
+          const detail = (JSON.parse(text) as { detail?: unknown }).detail;
+          reason = typeof detail === 'string' ? detail : JSON.stringify(detail ?? text);
+        } catch {
+          reason = text;
+        }
+      } catch {}
+      throw new Error(`HTTP ${res.status}${reason ? `: ${reason.slice(0, 160)}` : ''}`);
+    }
     return res;
   } finally {
     clearTimeout(t);

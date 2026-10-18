@@ -1,10 +1,17 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { formatDistance } from '../geo';
-import { useSettings } from '../settings';
-import { BORDER, BORDER_THIN, fonts, radii, useThemedStyles, type Palette } from '../theme';
-import type { BackendStatus, Camera } from '../types';
-import { RadiusSlider } from './RadiusSlider';
-import { Button, Chip } from './ui';
+import { StyleSheet, Text, View } from "react-native";
+import { formatDistance } from "../geo";
+import { useSettings } from "../settings";
+import {
+  BORDER,
+  BORDER_THIN,
+  fonts,
+  radii,
+  useThemedStyles,
+  type Palette,
+} from "../theme";
+import type { BackendStatus, Camera } from "../types";
+import { RadiusSlider } from "./RadiusSlider";
+import { Button, Chip } from "./ui";
 
 /**
  * Panel on the map, just above the tab bar. Plain: a title line, three labeled numbers, the radius slider,
@@ -28,32 +35,42 @@ export function NearbySheet({
   const nearest = cameras[0];
   const inView = cameras.some((cam) => cam.alert);
 
-  const title = backend === 'error' ? "Can't reach the server" : !nearest ? 'No cameras nearby' : nearest.name ?? 'Nearest camera';
+  const title =
+    backend === "error"
+      ? "Can't reach the server"
+      : !nearest
+        ? "No cameras nearby"
+        : (nearest.name ?? "Nearest camera");
 
   return (
-    <View style={[s.sheet, { bottom }]} onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>
+    <View
+      style={[s.sheet, { bottom }]}
+      onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}
+    >
       <View style={s.head}>
         <Text style={s.title} numberOfLines={1} accessibilityRole="header">
           {title}
         </Text>
         <View style={s.subRow}>
           <Text style={s.sub}>
-            {backend === 'error'
-              ? 'Check the server address in settings.'
+            {backend === "error"
+              ? "Check the server address in settings."
               : !nearest
                 ? `No cameras within ${formatDistance(radius, units)}`
                 : nearest.distance_m != null
                   ? `${formatDistance(nearest.distance_m, units)} from you`
-                  : 'Nearest camera'}
+                  : "Nearest camera"}
           </Text>
-          {backend !== 'error' && inView && <Chip label="In view" tone="alert" />}
-          {backend !== 'error' && !nearest && <Chip label="Clear" />}
+          {backend !== "error" && inView && (
+            <Chip label="In view" tone="alert" />
+          )}
+          {backend !== "error" && !nearest && <Chip label="Clear" />}
         </View>
       </View>
 
       <View style={s.tiles}>
         <Tile value={String(cameras.length)} label="In range" />
-        <Tile value={mode === 'driver' ? 'Driving' : 'Walking'} label="Mode" />
+        <Tile value={mode === "driver" ? "Driving" : "Walking"} label="Mode" />
         <Tile value={SERVER_LABEL[backend]} label="Server" />
       </View>
 
@@ -79,16 +96,16 @@ function Tile({ value, label }: { value: string; label: string }) {
 }
 
 const SERVER_LABEL: Record<BackendStatus, string> = {
-  off: 'Idle',
-  connecting: '…',
-  ok: 'Live',
-  error: 'Down',
+  off: "Idle",
+  connecting: "…",
+  ok: "Live",
+  error: "Down",
 };
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
     sheet: {
-      position: 'absolute',
+      position: "absolute",
       left: 0,
       right: 0,
       backgroundColor: c.paper,
@@ -101,9 +118,14 @@ const makeStyles = (c: Palette) =>
     },
     head: { gap: 4 },
     title: { fontFamily: fonts.heading, fontSize: 20, color: c.ink },
-    subRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+    subRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      flexWrap: "wrap",
+    },
     sub: { fontFamily: fonts.sans, fontSize: 14, color: c.muted },
-    tiles: { flexDirection: 'row', gap: 8 },
+    tiles: { flexDirection: "row", gap: 8 },
     tile: {
       flex: 1,
       borderRadius: radii.tile,
@@ -115,7 +137,12 @@ const makeStyles = (c: Palette) =>
       gap: 2,
     },
     tileValue: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
-    tileLabel: { fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.6, color: c.muted },
+    tileLabel: {
+      fontFamily: fonts.sansBold,
+      fontSize: 10,
+      letterSpacing: 0.6,
+      color: c.muted,
+    },
     sliderBox: {
       backgroundColor: c.surface,
       borderRadius: radii.tile,

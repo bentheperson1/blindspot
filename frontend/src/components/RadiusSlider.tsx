@@ -1,10 +1,10 @@
-import Slider from '@react-native-community/slider';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { MILE, RADIUS_MAX_M, RADIUS_MIN_M } from '../config';
-import { formatDistance } from '../geo';
-import { useSettings } from '../settings';
-import { fonts, useColors, useThemedStyles, type Palette } from '../theme';
+import Slider from "@react-native-community/slider";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { MILE, RADIUS_MAX_M, RADIUS_MIN_M } from "../config";
+import { formatDistance } from "../geo";
+import { useSettings } from "../settings";
+import { fonts, useColors, useThemedStyles, type Palette } from "../theme";
 
 /**
  * Detection radius, 0.5–5 mi.
@@ -76,7 +76,11 @@ export const RadiusSlider = memo(function RadiusSlider() {
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "baseline",
+    },
     label: { fontFamily: fonts.sansBold, fontSize: 14, color: c.ink },
     value: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
     slider: { height: 34 },

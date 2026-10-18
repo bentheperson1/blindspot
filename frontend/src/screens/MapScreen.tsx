@@ -1,13 +1,13 @@
-import { Feather } from '@expo/vector-icons';
-import { Fragment, useEffect, useRef } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
-import MapView, { Circle, Marker, Polygon } from 'react-native-maps';
-import { IconButton } from '../components/ui';
-import { UTD_CENTER } from '../config';
-import { formatDistance } from '../geo';
-import { useSettings } from '../settings';
-import { BORDER, useColors, useThemedStyles, type Palette } from '../theme';
-import type { Camera, LatLng } from '../types';
+import { Feather } from "@expo/vector-icons";
+import { Fragment, useEffect, useRef } from "react";
+import { Platform, StyleSheet, View } from "react-native";
+import MapView, { Circle, Marker, Polygon } from "react-native-maps";
+import { IconButton } from "../components/ui";
+import { UTD_CENTER } from "../config";
+import { formatDistance } from "../geo";
+import { useSettings } from "../settings";
+import { BORDER, useColors, useThemedStyles, type Palette } from "../theme";
+import type { Camera, LatLng } from "../types";
 
 /**
  * Draws exactly what the backend returned: no distance or filtering math on the phone.
@@ -32,7 +32,10 @@ export function MapScreen({
 
   const fitRadius = () => {
     const delta = (radius * 2.6) / 111_320;
-    mapRef.current?.animateToRegion({ ...center, latitudeDelta: delta, longitudeDelta: delta * 1.2 }, 400);
+    mapRef.current?.animateToRegion(
+      { ...center, latitudeDelta: delta, longitudeDelta: delta * 1.2 },
+      400,
+    );
   };
 
   // Zoom to fit the radius only when the radius itself changes.
@@ -47,10 +50,16 @@ export function MapScreen({
   const zoom = async (inward: boolean) => {
     const cam = await mapRef.current?.getCamera();
     if (!cam) return;
-    if (cam.altitude != null && Platform.OS === 'ios') {
-      mapRef.current?.animateCamera({ altitude: cam.altitude * (inward ? 0.5 : 2) }, { duration: 250 });
+    if (cam.altitude != null && Platform.OS === "ios") {
+      mapRef.current?.animateCamera(
+        { altitude: cam.altitude * (inward ? 0.5 : 2) },
+        { duration: 250 },
+      );
     } else if (cam.zoom != null) {
-      mapRef.current?.animateCamera({ zoom: cam.zoom + (inward ? 1 : -1) }, { duration: 250 });
+      mapRef.current?.animateCamera(
+        { zoom: cam.zoom + (inward ? 1 : -1) },
+        { duration: 250 },
+      );
     }
   };
 
@@ -60,15 +69,25 @@ export function MapScreen({
         key={colors.scheme} // remount so Android picks up the new map style
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        initialRegion={{ ...center, latitudeDelta: (radius * 2.6) / 111_320, longitudeDelta: (radius * 3.1) / 111_320 }}
+        initialRegion={{
+          ...center,
+          latitudeDelta: (radius * 2.6) / 111_320,
+          longitudeDelta: (radius * 3.1) / 111_320,
+        }}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
         showsPointsOfInterests={false}
         toolbarEnabled={false}
         userInterfaceStyle={colors.scheme}
-        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
-        customMapStyle={Platform.OS === 'android' ? (colors.scheme === 'dark' ? STORYBOOK_DARK : STORYBOOK_LIGHT) : undefined}
+        mapType={Platform.OS === "ios" ? "mutedStandard" : "standard"}
+        customMapStyle={
+          Platform.OS === "android"
+            ? colors.scheme === "dark"
+              ? STORYBOOK_DARK
+              : STORYBOOK_LIGHT
+            : undefined
+        }
       >
         <Circle
           center={center}
@@ -92,13 +111,21 @@ export function MapScreen({
               )}
               <Marker
                 coordinate={c}
-                title={c.name ?? 'License plate camera'}
-                description={c.distance_m != null ? `${formatDistance(c.distance_m, units)} from you` : undefined}
+                title={c.name ?? "License plate camera"}
+                description={
+                  c.distance_m != null
+                    ? `${formatDistance(c.distance_m, units)} from you`
+                    : undefined
+                }
                 anchor={{ x: 0.5, y: 0.5 }}
                 tracksViewChanges={false}
               >
                 <View style={[styles.marker, hot && styles.markerHot]}>
-                  <Feather name="video" size={16} color={hot ? colors.onAlert : colors.alert} />
+                  <Feather
+                    name="video"
+                    size={16}
+                    color={hot ? colors.onAlert : colors.alert}
+                  />
                 </View>
               </Marker>
             </Fragment>
@@ -108,12 +135,29 @@ export function MapScreen({
 
       <View style={[styles.controls, { top: controlsTop }]}>
         <View style={styles.zoomStack}>
-          <IconButton icon="plus" label="Zoom in" size={44} onPress={() => zoom(true)} />
-          <IconButton icon="minus" label="Zoom out" size={44} onPress={() => zoom(false)} />
+          <IconButton
+            icon="plus"
+            label="Zoom in"
+            size={44}
+            onPress={() => zoom(true)}
+          />
+          <IconButton
+            icon="minus"
+            label="Zoom out"
+            size={44}
+            onPress={() => zoom(false)}
+          />
         </View>
       </View>
       <View style={[styles.recenter, { bottom: recenterBottom }]}>
-        <IconButton icon="navigation" label="My location" showLabel size={44} tone="primary" onPress={fitRadius} />
+        <IconButton
+          icon="navigation"
+          label="My location"
+          showLabel
+          size={44}
+          tone="primary"
+          onPress={fitRadius}
+        />
       </View>
     </View>
   );
@@ -128,44 +172,100 @@ const makeStyles = (c: Palette) =>
       backgroundColor: c.surface,
       borderWidth: BORDER,
       borderColor: c.outline,
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems: "center",
+      justifyContent: "center",
     },
     markerHot: { backgroundColor: c.alert },
-    controls: { position: 'absolute', right: 16, alignItems: 'center' },
+    controls: { position: "absolute", right: 16, alignItems: "center" },
     zoomStack: { gap: 8 },
-    recenter: { position: 'absolute', right: 16 },
+    recenter: { position: "absolute", right: 16 },
   });
 
 // Google Maps styles (Android) built from tints/shades of indigo and cream: quiet cream land, pale roads, muted water.
 const STORYBOOK_LIGHT = [
-  { elementType: 'geometry', stylers: [{ color: '#F2F0E3' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#636575' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#EEEBDA' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', stylers: [{ visibility: 'on' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#D0CEC4' }] },
-  { featureType: 'poi.park', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#F8F7F0' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#C6C5BD' }] },
-  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#DEDCCE' }] },
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#E4E1D3' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#B7B5B2' }] },
+  { elementType: "geometry", stylers: [{ color: "#F2F0E3" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#636575" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#EEEBDA" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.park", stylers: [{ visibility: "on" }] },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#D0CEC4" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "road",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#F8F7F0" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#C6C5BD" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#DEDCCE" }],
+  },
+  {
+    featureType: "landscape.man_made",
+    elementType: "geometry",
+    stylers: [{ color: "#E4E1D3" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#B7B5B2" }],
+  },
 ];
 
 const STORYBOOK_DARK = [
-  { elementType: 'geometry', stylers: [{ color: '#303350' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#B3B1AF' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#282B4A' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', stylers: [{ visibility: 'on' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#40425B' }] },
-  { featureType: 'poi.park', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#464860' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#282B4A' }] },
-  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#58596D' }] },
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#363854' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#1C1E34' }] },
+  { elementType: "geometry", stylers: [{ color: "#303350" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#B3B1AF" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#282B4A" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.park", stylers: [{ visibility: "on" }] },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#40425B" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "road",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#464860" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#282B4A" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#58596D" }],
+  },
+  {
+    featureType: "landscape.man_made",
+    elementType: "geometry",
+    stylers: [{ color: "#363854" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#1C1E34" }],
+  },
 ];

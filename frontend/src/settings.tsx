@@ -1,7 +1,14 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DEFAULT_API_URL, MILE } from './config';
-import type { Appearance, TravelMode, Units, ViewMode } from './types';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { DEFAULT_API_URL, MILE } from "./config";
+import type { Appearance, TravelMode, Units, ViewMode } from "./types";
 
 export type Settings = {
   view: ViewMode;
@@ -13,17 +20,20 @@ export type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  view: 'map',
+  view: "map",
   radius: 1 * MILE,
-  mode: 'pedestrian',
-  units: 'imperial',
+  mode: "pedestrian",
+  units: "imperial",
   apiUrl: DEFAULT_API_URL,
-  appearance: 'light',
+  appearance: "light",
 };
 
-const KEY = 'flock.settings.v1';
+const KEY = "flock.settings.v1";
 
-type Ctx = Settings & { update: (patch: Partial<Settings>) => void; loaded: boolean };
+type Ctx = Settings & {
+  update: (patch: Partial<Settings>) => void;
+  loaded: boolean;
+};
 const SettingsContext = createContext<Ctx | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -51,11 +61,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     [settings, loaded],
   );
 
-  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
+  return (
+    <SettingsContext.Provider value={value}>
+      {children}
+    </SettingsContext.Provider>
+  );
 }
 
 export function useSettings(): Ctx {
   const ctx = useContext(SettingsContext);
-  if (!ctx) throw new Error('useSettings must be used inside SettingsProvider');
+  if (!ctx) throw new Error("useSettings must be used inside SettingsProvider");
   return ctx;
 }

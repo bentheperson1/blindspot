@@ -83,13 +83,13 @@ class InputInfo(BaseModel):
     beta: float
     gamma: float
     compass_heading: float
-    screen_w: int
-    screen_h: int
-    hfov: int
+    screen_w: float
+    screen_h: float
+    hfov: float
 
 
 class LocationInputInfo(InputInfo):
-    radius: int
+    radius: float
 
 
 class UserMessage(BaseModel):
