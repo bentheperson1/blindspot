@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.routes import health, images, cameras, classify
 from app.core.config import settings
+from app.services import camera_store
 from app.services.classifier import load_classifier
 
 logger = logging.getLogger("uvicorn.error")
@@ -21,6 +23,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Could not load Flock classifier from %s", settings.classifier_model_path)
         app.state.classifier = None
+
+    # Warm the Firestore camera cache. Firebase is optional; without it the AR dots are just empty.
+    try:
+        await run_in_threadpool(camera_store.all_cameras)
+    except camera_store.CameraStoreUnavailable:
+        pass  # camera_store already logged why
+    except Exception:
+        logger.warning("Could not preload cameras from Firestore", exc_info=True)
     yield
     # Shutdown: release resources here
     app.state.classifier = None
