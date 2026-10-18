@@ -12,9 +12,8 @@ from app.schemas.vision import FlockCamera
 DEFAULT_RADIUS_M = 500
 CACHE_SECONDS = 300
 
-credential_path = os.getenv("DATABASE_CREDENTIALS", "C:\\Users\\fifth\\Downloads\\felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
+credential_path = os.getenv("DATABASE_CREDENTIALS", "/Users/prestoncrowe/Desktop/Development/FelixDatathon26/backend/felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
 
-# Guard against "default app already exists" on reload / multiple imports
 if not firebase_admin._apps:
     firebase_admin.initialize_app(credentials.Certificate(credential_path))
 
@@ -32,14 +31,13 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def all_cameras() -> list[FlockCamera]:
-    """Every camera in Firestore, cached for CACHE_SECONDS. Blocking on a cache miss."""
     if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
         cameras = []
         for doc in _db.collection("flock_cameras").stream():
             try:
                 cameras.append(FlockCamera.model_validate(doc.to_dict()))
             except ValidationError:
-                continue  # skip malformed documents
+                continue
         _cache.update(cameras=cameras, loaded_at=time.time())
 
         print(cameras)
@@ -47,7 +45,6 @@ def all_cameras() -> list[FlockCamera]:
 
 
 def cameras_within(lat: float, lon: float, radius_m: float = DEFAULT_RADIUS_M) -> list[FlockCamera]:
-    """Cameras within radius_m of (lat, lon), nearest first."""
     hits = [
         (d, cam)
         for cam in all_cameras()

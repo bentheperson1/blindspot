@@ -59,15 +59,6 @@ def camera_heading(alpha, beta, gamma):
     fwd = get_rotation_matrix(alpha, beta, gamma) @ np.array([0.0, 0.0, -1.0])
     return np.degrees(np.arctan2(fwd[0], fwd[1])) % 360
 
-def yaw_corrected_matrix(alpha, beta, gamma, heading_deg):
-    R = get_rotation_matrix(alpha, beta, gamma)
-    fwd = R @ np.array([0.0, 0.0, -1.0])
-    h_motion = np.degrees(np.arctan2(fwd[0], fwd[1]))
-    d = np.radians(h_motion - heading_deg)
-    c, s = np.cos(d), np.sin(d)
-    Rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-    return Rz @ R
-
 def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCoordinates: List[FlockCamera], screen_w=1080, screen_h=1920, hfov=53):
     results = []
 
