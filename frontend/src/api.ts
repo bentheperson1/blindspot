@@ -41,6 +41,7 @@ export const PATHS = {
   frame: '/images/process-base64',
   health: '/health',
   cameras: '/cameras',
+  nearby: '/cameras/nearby', // backend: app/api/routes/cameras.py -> nearby(info: LocationInputInfo)
 };
 
 /**
@@ -157,6 +158,108 @@ export async function sendFrame(apiUrl: string, payload: FramePayload): Promise<
   const res = await request(`${base(apiUrl)}${PATHS.frame}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
   const json = (await res.json()) as Partial<FrameResult>;
   return { image: json.image, detections: json.detections ?? [], alert: json.alert, message: json.message };
+}
+
+/**
+ * Body for POST /cameras/nearby. Field names match the backend's LocationInputInfo
+ * (read by _project -> project_to_screen in app/api/routes/cameras.py).
+ *   lat_p, lon_p            phone GPS
+ *   alpha, beta, gamma      DeviceMotion rotation, degrees (alpha = around z, beta = around x, gamma = around y)
+ *   compass_heading         degrees, 0 = north, clockwise (same value as `yaw` in the frame payload)
+ *   screen_w, screen_h      size of the camera view on screen, in the same units the app draws in (points)
+ *   hfov                    horizontal field of view of the camera view on screen, degrees
+ *   radius                  search radius, meters
+ */
+export type NearbyRequest = {
+  lat_p: number;
+  lon_p: number;
+  alpha: number;
+  beta: number;
+  gamma: number;
+  compass_heading: number;
+  screen_w: number;
+  screen_h: number;
+  hfov: number;
+  radius: number;
+};
+
+/** One camera placed on screen. x/y are screen points from the top-left of the camera view. */
+export type ScreenCamera = {
+  key: string;
+  x: number;
+  y: number;
+  label: string;
+  distance_m: number | null;
+};
+
+/** Builds the /cameras/nearby body from the latest sensor readings. Null until GPS, compass and motion are ready. */
+export function buildNearbyRequest(
+  telemetry: Telemetry,
+  view: { width: number; height: number; hfov: number },
+  radius_m: number,
+): NearbyRequest | null {
+  const loc = telemetry.location;
+  const rot = telemetry.motion?.rotation;
+  const compass = telemetry.compass;
+  if (!loc || !rot || !compass) return null;
+  return {
+    lat_p: loc.latitude,
+    lon_p: loc.longitude,
+    alpha: rot.alpha * RAD_TO_DEG,
+    beta: rot.beta * RAD_TO_DEG,
+    gamma: rot.gamma * RAD_TO_DEG,
+    compass_heading: compass.trueHeading >= 0 ? compass.trueHeading : compass.magHeading,
+    screen_w: view.width,
+    screen_h: view.height,
+    hfov: view.hfov,
+    radius: radius_m,
+  };
+}
+
+const pickNum = (o: Record<string, unknown>, keys: string[]): number | null => {
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return null;
+};
+
+/**
+ * Calls POST /cameras/nearby and returns the cameras that land on screen.
+ * Accepts a plain list or { cameras: [...] }, and the common names for the screen position
+ * (x/y, screen_x/screen_y, px/py, u/v). Entries marked not visible, or without a position, are skipped.
+ */
+export async function fetchNearbyOnScreen(apiUrl: string, body: NearbyRequest): Promise<ScreenCamera[]> {
+  const res = await request(
+    `${base(apiUrl)}${PATHS.nearby}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    5000,
+  );
+  const json = (await res.json()) as unknown;
+  const list = Array.isArray(json) ? json : Array.isArray((json as { cameras?: unknown })?.cameras) ? (json as { cameras: unknown[] }).cameras : [];
+  const out: ScreenCamera[] = [];
+  list.forEach((raw, i) => {
+    if (!raw || typeof raw !== 'object') return;
+    const o = raw as Record<string, unknown>;
+    if (o.visible === false || o.on_screen === false || o.in_view === false) return;
+    let x = pickNum(o, ['x', 'screen_x', 'px', 'u']);
+    let y = pickNum(o, ['y', 'screen_y', 'py', 'v']);
+    if (x == null || y == null) return;
+    // If the backend sent fractions of the screen (0–1), turn them into points.
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+      x *= body.screen_w;
+      y *= body.screen_h;
+    }
+    const cam = (o.camera && typeof o.camera === 'object' ? o.camera : o) as Record<string, unknown>;
+    out.push({
+      key: String(cam.id ?? o.id ?? i),
+      x,
+      y,
+      label: String(cam.name ?? cam.label ?? o.name ?? 'Flock camera'),
+      distance_m: pickNum(o, ['distance_m', 'distance', 'dist_m']) ?? pickNum(cam, ['distance_m', 'distance']),
+    });
+  });
+  return out;
 }
 
 export async function checkHealth(apiUrl: string): Promise<boolean> {

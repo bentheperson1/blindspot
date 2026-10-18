@@ -50,6 +50,7 @@ Nothing is sent until GPS, compass and motion all have a reading, so the require
 Set the server URL in **Settings → Detector server** (default in `src/config.ts`). Paths are in `PATHS` in `src/api.ts`.
 
 - `POST /images/process-base64` receives the payload above. The current endpoint reads the frame from `image`, so the frame is also sent as `image` while `SEND_LEGACY_IMAGE_FIELD` is `true` in `src/api.ts`. Set it to `false` once the backend reads `frame`. The response's `image` (processed frame) is shown as a "Model output" thumbnail; `detections`, `alert` and `message` are drawn if present.
+- `POST /cameras/nearby` (backend `app/api/routes/cameras.py`) is called from the Camera tab every 0.5 s with `lat_p, lon_p, alpha, beta, gamma, compass_heading, screen_w, screen_h, hfov, radius` (built in `buildNearbyRequest`, `src/api.ts`; `hfov` from `src/fov.ts`). Each returned camera with a screen `x`/`y` is drawn as a red ring with its name and distance.
 - `GET /health` drives the "API live / down" indicator.
 - `GET /cameras?lat&lon&radius_m&mode` is not on the backend yet; the map stays empty until it exists.
 

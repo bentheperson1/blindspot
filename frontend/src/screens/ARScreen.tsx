@@ -2,7 +2,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { buildPayload, lensFromExif, sendFrame, type FrameResult } from '../api';
+import { buildNearbyRequest, buildPayload, fetchNearbyOnScreen, lensFromExif, sendFrame, type FrameResult, type LensInfo, type ScreenCamera } from '../api';
+import { screenHfov } from '../fov';
 import { Button, Chip, FramedCard, LogoMark } from '../components/ui';
 import { FRAME_INTERVAL_MS, FRAME_JPEG_QUALITY, FRAME_WIDTH_PX } from '../config';
 import type { Telemetry } from '../sensors';
@@ -12,6 +13,8 @@ import type { BackendStatus, Detection } from '../types';
 
 // Fixed at no zoom so the focal length doesn't change under the backend. Sent with every frame in `extra.lens`.
 const CAMERA_ZOOM = 0;
+// How often to ask /cameras/nearby where cameras are on screen. Only sensor data is sent, so it can run faster than frames.
+const NEARBY_INTERVAL_MS = 500;
 
 /**
  * AR view: a thin client for the backend model.
@@ -45,6 +48,11 @@ export function ARScreen({
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [showOutputFull, setShowOutputFull] = useState(false);
   const [waitingForSensors, setWaitingForSensors] = useState(false);
+  // Latest lens info from frame EXIF (for hfov), and the cameras /cameras/nearby placed on screen.
+  const lensRef = useRef<LensInfo | null>(null);
+  const [onScreen, setOnScreen] = useState<ScreenCamera[]>([]);
+  const viewRef = useRef({ width, height });
+  viewRef.current = { width, height };
 
   const report = (s: BackendStatus) => {
     setStatus(s);
@@ -76,9 +84,11 @@ export function ARScreen({
             if (shot && !stopped) {
               const img = await ImageManipulator.manipulate(shot.uri).resize({ width: FRAME_WIDTH_PX }).renderAsync();
               const small = await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
+              const lens = lensFromExif(shot.exif, CAMERA_ZOOM);
+              lensRef.current = lens;
               const payload = buildPayload(
                 telemetry,
-                { base64: small.base64 ?? '', width: small.width, height: small.height, cameraWidth: shot.width, cameraHeight: shot.height, lens: lensFromExif(shot.exif, CAMERA_ZOOM) },
+                { base64: small.base64 ?? '', width: small.width, height: small.height, cameraWidth: shot.width, cameraHeight: shot.height, lens },
                 { timestampSec, monotonicMs },
                 { platform: Platform.OS, settings: settingsRef.current },
               );
@@ -109,8 +119,37 @@ export function ARScreen({
     };
   }, [ready, apiUrl]);
 
+  // ---- Nearby loop: POST /cameras/nearby -> markers at the screen position the backend returns ----
+  useEffect(() => {
+    if (!ready) return;
+    let stopped = false;
+    (async () => {
+      while (!stopped) {
+        const started = Date.now();
+        try {
+          const { width: w, height: h } = viewRef.current;
+          const body = buildNearbyRequest(
+            snapshot(),
+            { width: w, height: h, hfov: screenHfov(lensRef.current?.focal_length_35mm, w, h) },
+            settingsRef.current.radius_m,
+          );
+          if (body) {
+            const cams = await fetchNearbyOnScreen(apiUrl, body);
+            if (!stopped) setOnScreen(cams);
+          }
+        } catch {
+          if (!stopped) setOnScreen([]);
+        }
+        await new Promise((r) => setTimeout(r, Math.max(0, NEARBY_INTERVAL_MS - (Date.now() - started))));
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [ready, apiUrl]);
+
   // ---- Alert: backend decides via `alert`; if it omits it, any detection counts ----
-  const alerting = result.alert ?? detections.length > 0;
+  const alerting = (result.alert ?? detections.length > 0) || onScreen.length > 0;
 
   if (!permission) return <View style={styles.fill} />;
   if (!permission.granted) {
@@ -140,7 +179,7 @@ export function ARScreen({
     : waitingForSensors
       ? 'Warming up'
       : alerting
-        ? `Camera spotted${detections.length > 1 ? ` (${detections.length})` : ''}`
+        ? `Camera spotted${Math.max(detections.length, onScreen.length) > 1 ? ` (${Math.max(detections.length, onScreen.length)})` : ''}`
         : 'Scanning';
   const headline = offline
     ? "Can't reach the server"
@@ -168,6 +207,16 @@ export function ARScreen({
         >
           <View style={styles.detLabelWrap}>
             <Chip label={`${d.label} ${Math.round(d.confidence * 100)}%`} tone="alert" />
+          </View>
+        </View>
+      ))}
+
+      {/* Cameras placed by /cameras/nearby: a ring at the exact screen point, with name and distance. */}
+      {onScreen.map((cam) => (
+        <View key={cam.key} pointerEvents="none" style={[styles.pin, { left: cam.x - PIN / 2, top: cam.y - PIN / 2 }]}>
+          <View style={styles.pinRing} />
+          <View style={styles.pinLabelWrap}>
+            <Chip label={cam.distance_m != null ? `${cam.label} · ${Math.round(cam.distance_m)} m` : cam.label} tone="alert" />
           </View>
         </View>
       ))}
@@ -211,8 +260,13 @@ export function ARScreen({
   );
 }
 
+const PIN = 44;
+
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
+    pin: { position: 'absolute', width: PIN, height: PIN, alignItems: 'center' },
+    pinRing: { width: PIN, height: PIN, borderRadius: PIN / 2, borderWidth: 4, borderColor: c.alert, backgroundColor: 'rgba(183,25,71,0.18)' },
+    pinLabelWrap: { position: 'absolute', top: PIN + 4, alignItems: 'center', minWidth: 160 },
     fill: { flex: 1, backgroundColor: '#282B4A' },
     center: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12, backgroundColor: c.paper },
     permTitle: { fontFamily: fonts.heading, color: c.ink, fontSize: 22, textAlign: 'center' },
