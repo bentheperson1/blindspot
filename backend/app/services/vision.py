@@ -59,59 +59,40 @@ def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> byt
 
 
 
-def process_sent_data(camera_width: int, camera_height: int, telemetry: Telemetry) -> tuple[int, int] | None:
-    w = camera_width
-    h = camera_height
+
+def process_sent_data(flock_cameras: list[FlockCamera], source_width: int, source_height: int, telemetry: Telemetry) -> list | None:
+    w = source_width
+    h = source_height
 
     if telemetry.location is None:
         print("No location in telemetry.")
-        return [-1, -1]
+        return []
 
     coord_lat = telemetry.location.latitude
     coord_long = telemetry.location.longitude
-
-    target_lat = 32.9829167
-    target_long = -96.7566389
 
     rotation = telemetry.motion.rotation if telemetry.motion and telemetry.motion.rotation else None
 
     if rotation is None:
         print("No rotation in telemetry.")
-        return [-1, -1]
+        return []
 
     alpha = to_360(rotation.alpha)
     beta = to_360(rotation.beta)
     gamma = to_360(rotation.gamma)
-    compass_heading = telemetry.compass.trueHeading
+    telem_heading = telemetry.compass.trueHeading
 	
     print(f"Alpha(yaw): {alpha:.1f}, Beta(pitch): {beta:.1f}, Gamma(roll): {gamma:.1f}")
     print(f"Coord: {coord_lat}, {coord_long}")
-    print(f"Target: {target_lat}, {target_long}")
-    print(f"Camera heading: {camera_heading(alpha, beta, gamma):.1f}")
 
     # Argument order is (alpha, beta, gamma) = (yaw, pitch, roll)
     result = project_to_screen(
         coord_lat, coord_long,
         alpha, beta, gamma,
-        target_lat, target_long,
-        screen_w=w, screen_h=h,
-        compass_heading=compass_heading,
+        telem_heading,
+        flock_cameras,
+        w, h,
         hfov=53
     )
 
-    if result[0] is None:
-        print("Target is behind the camera plane.")
-        return [-1, -1]
-
-    x, y = int(round(result[0])), int(round(result[1]))
-
-    if not (0 <= x < w and 0 <= y < h):
-        print(f"Target is off-screen at ({x}, {y}).")
-        return [-1, -1]
-
-    # cv2.circle(image, (x, y), 10, (0, 0, 255), -1)
-
-    x_normalized = x / w
-    y_normalized = y / h
-    
-    return [x_normalized, y_normalized]
+    return result

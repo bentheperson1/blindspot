@@ -47,6 +47,34 @@ class Settings(BaseModel):
     radius_m: float = Field(default=1609, gt=0)
     mode: str = "pedestrian"
 
+class Base64ImageRequest(BaseModel):
+    image: str
+
+class Telemetry(BaseModel):
+    ts: int
+    monotonic_ms: float
+    location: Location | None = None
+    locationTimestamp: int | None = None
+    compass: Compass | None = None
+    motion: Motion | None = None
+    magnetometer: Vec3 | None = None
+
+class Dot(BaseModel):
+    name: str
+    x: float  # normalized 0–1 within the camera frame
+    y: float
+    distance_to_user: float
+
+class Base64ImageResponse(BaseModel):
+    telemetry: Telemetry | None = None
+    dots: list[Dot] = []
+    
+class FlockCamera(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    heading: int
+
 
 class UserMessage(BaseModel):
     camera_width: int
@@ -63,26 +91,4 @@ class UserMessage(BaseModel):
     magnetometer: Vec3 | None = None
 
     settings: Settings
-
-class Base64ImageRequest(BaseModel):
-    image: str
-
-class Telemetry(BaseModel):
-    ts: int
-    monotonic_ms: float
-    location: Location | None = None
-    locationTimestamp: int | None = None
-    compass: Compass | None = None
-    motion: Motion | None = None
-    magnetometer: Vec3 | None = None
-
-class Base64ImageResponse(BaseModel):
-    telemetry: Telemetry | None = None
-    dot_x_normalized: float | None = None
-    dot_y_normalized: float | None = None
-    
-class FlockCamera(BaseModel):
-    name: str
-    latitude: float
-    longitude: float
-    heading: int
+    flock_cameras: list[FlockCamera] | None = None

@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile, WebSoc
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
+from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, Dot, FlockCamera, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
 from app.services import vision
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -32,14 +32,26 @@ async def process_upload(file: UploadFile = File(...)):
 async def process_base64(payload: UserMessage):
     telemetry = Telemetry.model_validate(payload.model_dump(include=set(Telemetry.model_fields)))
 
-    encoded = await run_in_threadpool(
-        vision.process_sent_data, payload.camera_width, payload.camera_height, telemetry
+    points = await run_in_threadpool(
+        vision.process_sent_data,
+        payload.flock_cameras or [FlockCamera(name="Test Camera", latitude=0.0, longitude=0.0, heading=0), FlockCamera(name="Test Camera 2", latitude=20.0, longitude=20.0, heading=0)],
+        payload.camera_width,
+        payload.camera_height,
+        telemetry,
     )
 
-    if encoded[0] == -1:
-        return Base64ImageResponse(telemetry=telemetry, dot_x_normalized=None, dot_y_normalized=None)
+    dots = []
+    for p in points:
+        if p is None:
+            continue
 
-    return Base64ImageResponse(telemetry=telemetry, dot_x_normalized=encoded[0], dot_y_normalized=encoded[1])
+        x, y = float(p["x"]), float(p["y"])
+        dist_to_user = float(p["distance_to_user"])
+
+        if 0 <= x <= 1 and 0 <= y <= 1:
+            dots.append(Dot(name=p["name"], x=x, y=y, distance_to_user=dist_to_user))
+        
+    return Base64ImageResponse(telemetry=telemetry, dots=dots)
 
 
 @router.post("/info", response_model=ImageInfo)

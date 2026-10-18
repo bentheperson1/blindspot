@@ -90,6 +90,7 @@ def yaw_corrected_matrix(alpha, beta, gamma, heading_deg):
 
 def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCoordinates: List[FlockCamera], screen_w=1080, screen_h=1920, hfov=53):
     results = []
+
     for camera in flockCoordinates:
         enu = ecef_to_enu(geodetic_to_ecef(camera.latitude, camera.longitude), geodetic_to_ecef(lat_p, lon_p), lat_p, lon_p)
 
@@ -103,12 +104,24 @@ def project_to_screen(lat_p, lon_p, alpha, beta, gamma, compass_heading, flockCo
         fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
         xs = xc * fx / zc + screen_w / 2.0
         ys = yc * fx / zc + screen_h / 2.0
+
+        normalized_x = xs / screen_w
+        normalized_y = ys / screen_h
         
-        results.append({"name": camera.name, "x": round(xs, 2), "y": round(ys, 2)})
+        results.append(
+            {
+                "name": camera.name, 
+                "x": normalized_x, 
+                "y": normalized_y, 
+                "distance_to_user": zc
+            }
+        )
+        
         """
         if 0 <= xs <= screen_w and 0 <= ys <= screen_h:
             return (round(xs, 2), round(ys, 2)), "Visible"
         else:
             return (round(xs, 2), round(ys, 2)), "Off-screen (But in front of camera view)"
         """
+    
     return results

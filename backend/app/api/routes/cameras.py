@@ -9,7 +9,9 @@ from ...services.ar_projection import project_to_screen
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
-credential_path = os.environ.get("DATABASE_CREDENTIALS")
+credential_path = os.environ.get("DATABASE_CREDENTIALS", "C:/Users/fifth/Downloads/felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
+
+print(credential_path)
 
 if not firebase_admin._apps:
     credential = credentials.Certificate(credential_path)
