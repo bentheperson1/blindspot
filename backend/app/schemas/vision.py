@@ -5,19 +5,11 @@ class ImageInfo(BaseModel):
     height: int
     channels: int
 
-
-class Base64ImageRequest(BaseModel):
-    image: str
-
-
-class Base64ImageResponse(BaseModel):
-    image: str
-
 class Location(BaseModel):
     latitude: float
     longitude: float
     altitude: float | None = None
-    accuracy: float  # meters
+    accuracy: float | None = None  # meters; Expo can report null
     altitudeAccuracy: float | None = None
     heading: float | None = None  # course of travel, -1 or null when not moving
     speed: float | None = None
@@ -25,9 +17,8 @@ class Location(BaseModel):
 
 class Compass(BaseModel):
     magHeading: float
-    trueHeading: float | None = None  # null if the device can't compute it
-    accuracy: float  # degrees
-
+    trueHeading: float | None = None  # -1 (iOS) or null when unavailable
+    accuracy: float | None = None  # calibration level 0-3, not degrees
 
 class Vec3(BaseModel):
     x: float
@@ -56,28 +47,65 @@ class Settings(BaseModel):
     radius_m: float = Field(default=1609, gt=0)
     mode: str = "pedestrian"
 
+class Base64ImageRequest(BaseModel):
+    image: str
 
-class UserMessage(BaseModel):
-    image: str  # base64 JPEG
-    width: int
-    height: int
-    camera_width: int
-    camera_height: int
-
-    ts: int  # unix ms, client clock
+class Telemetry(BaseModel):
+    ts: int
     monotonic_ms: float
-
-    location: Location
-    locationTimestamp: int  # unix ms of the GPS fix
-
-    compass: Compass
+    location: Location | None = None
+    locationTimestamp: int | None = None
+    compass: Compass | None = None
     motion: Motion | None = None
     magnetometer: Vec3 | None = None
 
-    settings: Settings
+class Dot(BaseModel):
+    name: str
+    x: float  # normalized 0–1 within the camera frame
+    y: float
+    distance_to_user: float
+
+class Base64ImageResponse(BaseModel):
+    telemetry: Telemetry | None = None
+    dots: list[Dot] = []
     
 class FlockCamera(BaseModel):
     name: str
     latitude: float
     longitude: float
     heading: int
+
+
+class InputInfo(BaseModel):
+    lat_p: float
+    lon_p: float
+    alpha: float
+    beta: float
+    gamma: float
+    compass_heading: float
+    screen_w: int
+    screen_h: int
+    hfov: int
+
+
+class LocationInputInfo(InputInfo):
+    radius: int
+
+
+class UserMessage(BaseModel):
+    camera_width: int
+    camera_height: int
+
+    ts: int  # unix ms, client clock
+    monotonic_ms: float
+
+    location: Location | None = None
+    locationTimestamp: int | None = None
+
+    compass: Compass | None = None
+    motion: Motion | None = None
+    magnetometer: Vec3 | None = None
+
+    settings: Settings
+    flock_cameras: list[FlockCamera] | None = None
+    radius_m: float | None = None  # optional override of settings.radius_m

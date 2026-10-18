@@ -1,25 +1,31 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendFrame, type FrameResult } from '../api';
-import { FRAME_INTERVAL_MS, FRAME_JPEG_QUALITY, FRAME_WIDTH_PX } from '../config';
+import { FRAME_INTERVAL_MS } from '../config';
 import type { Telemetry } from '../sensors';
 import { useSettings } from '../settings';
 import { colors, radii } from '../theme';
-import type { BackendStatus, Detection } from '../types';
+import type { BackendStatus, Camera, Detection } from '../types';
+import { formatDistance } from '../geo';
+
+
+const TARGET_DOT_SIZE = 20;
+
 
 /**
- * AR view: a thin client for the backend model.
- * Each tick it sends a base64 frame + raw GPS + raw rotation/motion sensors,
- * and draws exactly what the backend returns. No math or filtering happens here.
+ * AR view: a thin client for the backend.
+ * Each tick it sends the camera size, raw GPS, raw rotation/motion sensors and the camera list,
+ * and draws one dot per camera the backend says is in view. No projection math happens here.
  */
 export function ARScreen({
   snapshot,
   onBackendStatus,
+  cameras,
 }: {
   snapshot: () => Telemetry;
   onBackendStatus: (s: BackendStatus) => void;
+  cameras: Camera[];
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const { apiUrl, radius, mode } = useSettings();
@@ -27,63 +33,79 @@ export function ARScreen({
   const camRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<BackendStatus>('connecting');
-  const [result, setResult] = useState<FrameResult>({ detections: [] });
+  const [result, setResult] = useState<FrameResult>({ detections: [], dots: [] });
   const detections: Detection[] = result.detections;
 
   // Latest settings in a ref so changing them doesn't restart the loop.
   const settingsRef = useRef({ radius_m: radius, mode });
   settingsRef.current = { radius_m: radius, mode };
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [showOutputFull, setShowOutputFull] = useState(false);
+
+  // Latest props in refs: the loop effect only re-runs on [ready, apiUrl],
+  // so without these it would keep calling whichever versions existed on first mount.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+
+  const onBackendStatusRef = useRef(onBackendStatus);
+  onBackendStatusRef.current = onBackendStatus;
+
+  const camerasRef = useRef(cameras);
+  camerasRef.current = cameras;
+
+  // Camera image size, read once at startup. Used to map normalized dots onto the screen.
+  const frameSizeRef = useRef<{ w: number; h: number } | null>(null);
 
   const report = (s: BackendStatus) => {
     setStatus(s);
-    onBackendStatus(s);
+    onBackendStatusRef.current(s);
   };
 
-  // ---- Frame loop: capture -> shrink -> model -> draw ----
+  // ---- Loop: read sensors -> send -> draw dots ----
   useEffect(() => {
     if (!ready) return;
     let stopped = false;
     report('connecting');
 
     (async () => {
+      // One throwaway photo, only to learn the camera's image size. Nothing is captured after this.
+      if (!frameSizeRef.current) {
+        try {
+          const probe = await camRef.current?.takePictureAsync({ quality: 0.1, shutterSound: false, skipProcessing: true });
+          if (probe) frameSizeRef.current = { w: probe.width, h: probe.height };
+        } catch {}
+      }
+      // Fall back to the screen size if the probe failed.
+      const size = frameSizeRef.current ?? { w: width, h: height };
+      frameSizeRef.current = size;
+
       while (!stopped) {
         const started = Date.now();
+
         try {
-          // Timestamps taken right when the frame is captured.
           const monotonicMs = performance.now();
           const ts = Date.now();
-          const shot = await camRef.current?.takePictureAsync({ quality: 0.5, shutterSound: false, skipProcessing: true });
-          if (shot && !stopped) {
-            const img = await ImageManipulator.manipulate(shot.uri).resize({ width: FRAME_WIDTH_PX }).renderAsync();
-            const small = await img.saveAsync({ compress: FRAME_JPEG_QUALITY, format: SaveFormat.JPEG, base64: true });
-            const res = await sendFrame(
-              apiUrl,
-              {
-                base64: small.base64 ?? '',
-                width: small.width,
-                height: small.height,
-                cameraWidth: shot.width,
-                cameraHeight: shot.height,
-                monotonicMs,
-                ts,
-              },
-              snapshot(),
-              settingsRef.current,
-            );
-            if (!stopped) {
-              setResult(res);
-              setLatencyMs(Date.now() - started);
-              report('ok');
-            }
+          const telemetry = snapshotRef.current();
+
+          const res = await sendFrame(
+            apiUrl,
+            { cameraWidth: size.w, cameraHeight: size.h, monotonicMs, ts },
+            telemetry,
+            settingsRef.current,
+            camerasRef.current,
+          );
+
+          if (!stopped) {
+            setResult(res);
+            setLatencyMs(Date.now() - started);
+            report('ok');
           }
         } catch {
           if (!stopped) {
-            setResult({ detections: [] });
+            setResult({ detections: [], dots: [] });
             report('error');
           }
         }
+
         const wait = Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started));
         await new Promise((r) => setTimeout(r, wait));
       }
@@ -91,7 +113,7 @@ export function ARScreen({
 
     return () => {
       stopped = true;
-      onBackendStatus('off');
+      onBackendStatusRef.current('off');
     };
   }, [ready, apiUrl]);
 
@@ -127,34 +149,63 @@ export function ARScreen({
     );
   }
 
+  // Map normalized frame coordinates onto the screen using the same cover-fit the preview uses.
+  const fs = frameSizeRef.current;
+  const scale = fs ? Math.max(width / fs.w, height / fs.h) : 1;
+  const fit = fs
+    ? { w: fs.w * scale, h: fs.h * scale, x: (width - fs.w * scale) / 2, y: (height - fs.h * scale) / 2 }
+    : null;
+
+  const dotPositions = fit
+    ? result.dots
+        .map((d) => ({ 
+          key: d.name, 
+          x: fit.x + d.x * fit.w, 
+          y: fit.y + d.y * fit.h, 
+          distance_to_user: d.distance_to_user 
+        }))
+        .filter((p) => p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height)
+    : [];
+
   return (
     <View style={styles.fill}>
       <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} animateShutter={false} />
 
-      {/* Processed frame the backend sends back. Tap to toggle full screen. */}
-      {result.image ? (
-        <Pressable
-          onPress={() => setShowOutputFull((v) => !v)}
-          style={showOutputFull ? StyleSheet.absoluteFill : styles.outputThumb}
-          accessibilityLabel="Model output"
-        >
-          <Image source={{ uri: `data:image/jpeg;base64,${result.image}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          {!showOutputFull && <Text style={styles.outputLabel}>Model output</Text>}
-        </Pressable>
-      ) : null}
-
       {/* Model detections. Boxes are normalized 0–1 relative to the frame. */}
-      {detections.map((d, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={[styles.detBox, { left: d.box[0] * width, top: d.box[1] * height, width: d.box[2] * width, height: d.box[3] * height }]}
-        >
-          <Text style={styles.detLabel}>
-            {d.label} {Math.round(d.confidence * 100)}%
-          </Text>
-        </View>
-      ))}
+      {fit &&
+        detections.map((d, i) => (
+          <View
+            key={i}
+            pointerEvents="none"
+            style={[
+              styles.detBox,
+              {
+                left: fit.x + d.box[0] * fit.w,
+                top: fit.y + d.box[1] * fit.h,
+                width: d.box[2] * fit.w,
+                height: d.box[3] * fit.h,
+              },
+            ]}
+          >
+            <Text style={styles.detLabel}>
+              {d.label} {Math.round(d.confidence * 100)}%
+            </Text>
+          </View>
+        ))}
+
+      {/* One dot per camera the backend projected into view. */}
+      {dotPositions.map((p) => {
+        const label = formatDistance(p.distance_to_user);
+        return (
+          <View
+            key={p.key}
+            pointerEvents="none"
+            style={[styles.targetDot, { left: p.x - TARGET_DOT_SIZE / 2, top: p.y - TARGET_DOT_SIZE / 2 }]}
+          >
+            {label && <Text style={styles.distanceLabel}>{label}</Text>}
+          </View>
+        );
+      })}
 
       {/* Detector readout */}
       <View pointerEvents="none" style={styles.readout}>
@@ -166,9 +217,11 @@ export function ARScreen({
               ? 'Connecting to detector…'
               : result.message
                 ? result.message
-                : detections.length > 0
-                  ? `${detections.length} detection${detections.length > 1 ? 's' : ''}`
-                  : 'Scanning…'}
+                : dotPositions.length > 0
+                  ? `${dotPositions.length} camera${dotPositions.length > 1 ? 's' : ''} in view`
+                  : detections.length > 0
+                    ? `${detections.length} detection${detections.length > 1 ? 's' : ''}`
+                    : 'Scanning…'}
         </Text>
         {latencyMs != null && status === 'ok' && <Text style={styles.latency}>{latencyMs} ms</Text>}
       </View>
@@ -193,6 +246,18 @@ const styles = StyleSheet.create({
   permBtn: { backgroundColor: colors.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: radii.md, marginTop: 8 },
   permBtnText: { color: '#06231F', fontWeight: '700', fontSize: 15 },
   detBox: { position: 'absolute', borderWidth: 3, borderColor: colors.alert, borderRadius: 6 },
+  distanceLabel: {
+    position: 'absolute',
+    top: TARGET_DOT_SIZE + 4,
+    left: (TARGET_DOT_SIZE - 80) / 2,
+    width: 80,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 3,
+  },
   detLabel: {
     position: 'absolute',
     top: -22,
@@ -205,6 +270,15 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
+  },
+  targetDot: {
+    position: 'absolute',
+    width: TARGET_DOT_SIZE,
+    height: TARGET_DOT_SIZE,
+    borderRadius: TARGET_DOT_SIZE / 2,
+    backgroundColor: colors.alert,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   readout: {
     position: 'absolute',
@@ -223,29 +297,5 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   readoutText: { color: colors.text, fontSize: 14, fontWeight: '700' },
   latency: { color: colors.textDim, fontSize: 12, fontVariant: ['tabular-nums'] },
-  outputThumb: {
-    position: 'absolute',
-    top: 120,
-    right: 16,
-    width: 120,
-    height: 160,
-    borderRadius: radii.md,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: colors.accent,
-    backgroundColor: '#000',
-  },
-  outputLabel: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    backgroundColor: 'rgba(14,17,22,0.8)',
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: '700',
-    paddingVertical: 3,
-  },
   vignette: { borderWidth: 28, borderColor: 'rgba(229,72,77,0.55)', borderRadius: 4 },
 });

@@ -29,33 +29,35 @@ export const PATHS = {
   cameras: '/cameras',
 };
 
+export type CameraDot = { name: string; x: number; y: number, distance_to_user: number };
+
 export type FrameResult = {
-  image?: string; // processed frame from the backend, base64 jpeg
   detections: Detection[];
+  dots: CameraDot[]; // empty when no camera is in view
   alert?: boolean;
   message?: string;
 };
 
 export async function sendFrame(
   apiUrl: string,
-  frame: { base64: string; width: number; height: number; cameraWidth: number; cameraHeight: number; monotonicMs: number; ts: number },
+  frame: { cameraWidth: number; cameraHeight: number; monotonicMs: number; ts: number },
   telemetry: Telemetry,
   settings: { radius_m: number; mode: TravelMode },
+  cameras: Camera[],
 ): Promise<FrameResult> {
   const body = JSON.stringify({
-    image: frame.base64,
-    width: frame.width,
-    height: frame.height,
     camera_width: frame.cameraWidth,
     camera_height: frame.cameraHeight,
     ts: frame.ts,
     monotonic_ms: frame.monotonicMs,
     ...telemetry,
     settings,
+    flock_cameras: cameras,
   });
   const res = await request(`${base(apiUrl)}${PATHS.frame}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
   const json = (await res.json()) as Partial<FrameResult>;
-  return { image: json.image, detections: json.detections ?? [], alert: json.alert, message: json.message };
+  const dots = (json.dots ?? []).filter((d) => typeof d.x === 'number' && typeof d.y === 'number' && typeof d.distance_to_user === 'number');
+  return { detections: json.detections ?? [], dots, alert: json.alert, message: json.message };
 }
 
 export async function checkHealth(apiUrl: string): Promise<boolean> {
