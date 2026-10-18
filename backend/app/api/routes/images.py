@@ -1,11 +1,12 @@
 import base64
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, Dot, FlockCamera, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
 from app.services import camera_store, vision
+from app.services.classifier import describe
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -28,13 +29,36 @@ async def process_upload(file: UploadFile = File(...)):
     return Response(content=encoded, media_type="image/jpeg")
 
 
+async def classify_frame(classifier, image_b64: str | None) -> dict:
+    if not image_b64:
+        return {}
+    if classifier is None:
+        return {"message": "Classifier not loaded"}
+
+    try:
+        data = vision.decode_base64(image_b64)
+    except vision.InvalidImageError:
+        return {"message": "Could not read image"}
+    if len(data) > settings.max_upload_bytes:
+        return {"message": "Image too large"}
+
+    # Pillow-based, no OpenCV. A bad frame shouldn't drop the AR dots, so errors become a message.
+    try:
+        result = await run_in_threadpool(classifier.predict_bytes, data)
+    except Exception:
+        return {"message": "Could not read image"}
+
+    return describe(result)
+
+
 @router.post("/process-base64", response_model=Base64ImageResponse)
-async def process_base64(payload: UserMessage):
+async def process_base64(payload: UserMessage, request: Request):
     telemetry = Telemetry.model_validate(payload.model_dump(include=set(Telemetry.model_fields)))
- 
+    classification = await classify_frame(request.app.state.classifier, payload.image or payload.frame)
+
     if telemetry.location is None:
-        return Base64ImageResponse(telemetry=telemetry, dots=[])
- 
+        return Base64ImageResponse(telemetry=telemetry, dots=[], **classification)
+
     def build_points():
         cameras = camera_store.cameras_within(
             telemetry.location.latitude,
@@ -55,7 +79,7 @@ async def process_base64(payload: UserMessage):
                 distance_to_user=float(p["distance_to_user"]),
             ))
  
-    return Base64ImageResponse(telemetry=telemetry, dots=dots)
+    return Base64ImageResponse(telemetry=telemetry, dots=dots, **classification)
 
 
 @router.post("/info", response_model=ImageInfo)

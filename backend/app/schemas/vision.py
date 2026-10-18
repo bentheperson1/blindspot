@@ -68,6 +68,13 @@ class Dot(BaseModel):
 class Base64ImageResponse(BaseModel):
     telemetry: Telemetry | None = None
     dots: list[Dot] = []
+
+    # Flock camera classifier result for the frame (null fields when no frame was classified)
+    alert: bool = False
+    message: str | None = None
+    detections: list[dict] = []
+    probability: float | None = None
+    verdict: str | None = None
     
 class FlockCamera(BaseModel):
     name: str
@@ -109,3 +116,7 @@ class UserMessage(BaseModel):
     settings: Settings
     flock_cameras: list[FlockCamera] | None = None
     radius_m: float | None = None  # optional override of settings.radius_m
+
+    # base64 JPEG of the current frame; the app sends it as both `image` (legacy) and `frame`
+    image: str | None = None
+    frame: str | None = None

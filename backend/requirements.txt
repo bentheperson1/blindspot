@@ -4,5 +4,8 @@ pydantic-settings
 python-multipart
 opencv-python-headless
 numpy
+joblib
+pillow
+scikit-learn
 pytest
 httpx

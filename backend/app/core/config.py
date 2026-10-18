@@ -10,6 +10,11 @@ class Settings(BaseSettings):
 
     allowed_origins: list[str] = ["*"]
 
+    # Flock camera photo classifier (model/predict.py). Relative paths resolve against backend/.
+    # Env vars: CLASSIFIER_DIR, CLASSIFIER_MODEL_PATH
+    classifier_dir: str = "../model"
+    classifier_model_path: str = "../model/model_out/model.joblib"
+
     model_config = SettingsConfigDict(env_file=".env")
 
 
