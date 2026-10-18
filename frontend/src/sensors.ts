@@ -12,7 +12,7 @@ export type Telemetry = {
   magnetometer: { x: number; y: number; z: number; timestamp: number } | null;
 };
 
-const SENSOR_INTERVAL_MS = 100;
+const SENSOR_INTERVAL_MS = 10;
 
 export function useTelemetry() {
   const latest = useRef<Telemetry>({ location: null, locationTimestamp: null, compass: null, motion: null, magnetometer: null });

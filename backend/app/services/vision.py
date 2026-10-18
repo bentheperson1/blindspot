@@ -8,7 +8,7 @@ import math
 
 from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
 
-from .ar_projection import project_to_screen
+from .ar_projection import *
 
 def to_360(angle):
 	if angle is None:
@@ -58,37 +58,60 @@ def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> byt
 	return encoded.tobytes()
 
 
-def process_sent_data(data: bytes, telemetry_payload: Telemetry, quality: int = 90) -> np.ndarray:
-	# Replace this with your actual pipeline
-	image = decode_image(data)
 
-	#gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-	#edges = cv2.Canny(gray, 100, 200)
+def process_sent_data(camera_width: int, camera_height: int, telemetry: Telemetry) -> tuple[int, int] | None:
+    w = camera_width
+    h = camera_height
 
-	telemetry = Telemetry.model_validate(telemetry_payload.model_dump(include=set(Telemetry.model_fields)))
+    if telemetry.location is None:
+        print("No location in telemetry.")
+        return [-1, -1]
 
-	coord_lat = telemetry.location.latitude
-	coord_long = telemetry.location.longitude
+    coord_lat = telemetry.location.latitude
+    coord_long = telemetry.location.longitude
 
-	target_lat = 32.9829167
-	target_long = -96.7566389
+    target_lat = 32.9829167
+    target_long = -96.7566389
 
-	roll = to_360(telemetry.motion.rotation.gamma if telemetry.motion and telemetry.motion.rotation else 0)
-	pitch = to_360(telemetry.motion.rotation.beta if telemetry.motion and telemetry.motion.rotation else 0)
-	yaw = to_360(telemetry.motion.rotation.alpha if telemetry.motion and telemetry.motion.rotation else 0)
+    rotation = telemetry.motion.rotation if telemetry.motion and telemetry.motion.rotation else None
 
-	print(f"Roll: {roll}, Pitch: {pitch}, Yaw: {yaw}")
+    if rotation is None:
+        print("No rotation in telemetry.")
+        return [-1, -1]
 
-	print(f"Coord: {coord_lat}, {coord_long}")
-	print(f"Target: {target_lat}, {target_long}")
+    alpha = to_360(rotation.alpha)
+    beta = to_360(rotation.beta)
+    gamma = to_360(rotation.gamma)
+    compass_heading = telemetry.compass.trueHeading
+	
+    print(f"Alpha(yaw): {alpha:.1f}, Beta(pitch): {beta:.1f}, Gamma(roll): {gamma:.1f}")
+    print(f"Coord: {coord_lat}, {coord_long}")
+    print(f"Target: {target_lat}, {target_long}")
+    print(f"Camera heading: {camera_heading(alpha, beta, gamma):.1f}")
 
-	result = project_to_screen(coord_lat, coord_long, roll, pitch, yaw, target_lat, target_long)
+    # Argument order is (alpha, beta, gamma) = (yaw, pitch, roll)
+    result = project_to_screen(
+        coord_lat, coord_long,
+        alpha, beta, gamma,
+        target_lat, target_long,
+        screen_w=w, screen_h=h,
+        compass_heading=compass_heading,
+        hfov=53
+    )
 
-	if result[0] is None or result[1] is None:
-		print("Target is behind the camera plane.")
-		return encode_image(image, ".jpg", quality)
+    if result[0] is None:
+        print("Target is behind the camera plane.")
+        return [-1, -1]
 
-	cv2.circle(image, (int(result[0]), int(result[1])), 10, (0, 0, 255), -1)
+    x, y = int(round(result[0])), int(round(result[1]))
 
-	return encode_image(image, ".jpg", quality)
+    if not (0 <= x < w and 0 <= y < h):
+        print(f"Target is off-screen at ({x}, {y}).")
+        return [-1, -1]
 
+    # cv2.circle(image, (x, y), 10, (0, 0, 255), -1)
+
+    x_normalized = x / w
+    y_normalized = y / h
+    
+    return [x_normalized, y_normalized]

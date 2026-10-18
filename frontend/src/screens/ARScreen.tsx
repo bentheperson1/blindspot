@@ -76,45 +76,36 @@ export function ARScreen({
     report('connecting');
 
     (async () => {
+      // One throwaway photo, only to learn the camera's image size. Nothing is captured after this.
+      if (!frameSizeRef.current) {
+        try {
+          const probe = await camRef.current?.takePictureAsync({ quality: 0.1, shutterSound: false, skipProcessing: true });
+          if (probe) frameSizeRef.current = { w: probe.width, h: probe.height };
+        } catch {}
+      }
+      // Fall back to the screen size if the probe failed.
+      const size = frameSizeRef.current ?? { w: width, h: height };
+      frameSizeRef.current = size;
+
       while (!stopped) {
         const started = Date.now();
 
         try {
-          // Clocks and sensors are read together, right before the shutter, so they line up with the frame.
           const monotonicMs = performance.now();
           const ts = Date.now();
           const telemetry = snapshotRef.current();
 
-          const shot = await camRef.current?.takePictureAsync({ quality: 0.5, shutterSound: false, skipProcessing: true });
+          const res = await sendFrame(
+            apiUrl,
+            { cameraWidth: size.w, cameraHeight: size.h, monotonicMs, ts },
+            telemetry,
+            settingsRef.current,
+          );
 
-          if (shot && !stopped) {
-            const small = await shrink(shot.uri);
-
-            if (!small.base64) {
-              throw new Error('encode failed');
-            }
-
-            const res = await sendFrame(
-              apiUrl,
-              {
-                base64: small.base64,
-                width: small.width,
-                height: small.height,
-                cameraWidth: shot.width,
-                cameraHeight: shot.height,
-                monotonicMs,
-                ts,
-              },
-              telemetry,
-              settingsRef.current,
-            );
-
-            if (!stopped) {
-              frameSizeRef.current = { w: small.width, h: small.height };
-              setResult(res);
-              setLatencyMs(Date.now() - started);
-              report('ok');
-            }
+          if (!stopped) {
+            setResult(res);
+            setLatencyMs(Date.now() - started);
+            report('ok');
           }
         } catch {
           if (!stopped) {
@@ -173,6 +164,9 @@ export function ARScreen({
     ? { w: fs.w * scale, h: fs.h * scale, x: (width - fs.w * scale) / 2, y: (height - fs.h * scale) / 2 }
     : null;
 
+  const dotPos = fit && result.dot ? { x: fit.x + result.dot.x * fit.w, y: fit.y + result.dot.y * fit.h } : null;
+  const dotOnScreen = !!dotPos && dotPos.x >= 0 && dotPos.x <= width && dotPos.y >= 0 && dotPos.y <= height;
+
   return (
     <View style={styles.fill}>
       <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} animateShutter={false} />
@@ -221,12 +215,24 @@ export function ARScreen({
               ? 'Connecting to detector…'
               : result.message
                 ? result.message
-                : detections.length > 0
-                  ? `${detections.length} detection${detections.length > 1 ? 's' : ''}`
-                  : 'Scanning…'}
+                : result.dot
+                  ? 'Target in view'
+                  : detections.length > 0
+                    ? `${detections.length} detection${detections.length > 1 ? 's' : ''}`
+                    : 'Scanning…'}
         </Text>
         {latencyMs != null && status === 'ok' && <Text style={styles.latency}>{latencyMs} ms</Text>}
       </View>
+
+      {dotPos && dotOnScreen && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.targetDot,
+            { left: dotPos.x - TARGET_DOT_SIZE / 2, top: dotPos.y - TARGET_DOT_SIZE / 2 },
+          ]}
+        />
+      )}
 
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.vignette, { opacity: pulse }]} />
     </View>
@@ -239,6 +245,8 @@ const STATUS_COLOR: Record<BackendStatus, string> = {
   ok: colors.accent,
   error: colors.alert,
 };
+
+const TARGET_DOT_SIZE = 20;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#000' },
@@ -260,6 +268,15 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
+  },
+  targetDot: {
+    position: 'absolute',
+    width: TARGET_DOT_SIZE,
+    height: TARGET_DOT_SIZE,
+    borderRadius: TARGET_DOT_SIZE / 2,
+    backgroundColor: colors.alert,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   readout: {
     position: 'absolute',

@@ -32,18 +32,14 @@ async def process_upload(file: UploadFile = File(...)):
 async def process_base64(payload: UserMessage):
     telemetry = Telemetry.model_validate(payload.model_dump(include=set(Telemetry.model_fields)))
 
-    try:
-        data = vision.decode_base64(payload.image)
-        check_size(data)
-        encoded = await run_in_threadpool(vision.process_sent_data, data, telemetry, settings.jpeg_quality)
-    except vision.InvalidImageError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-    return Base64ImageResponse(
-        image=base64.b64encode(encoded).decode("ascii"),
-        telemetry=telemetry,
+    encoded = await run_in_threadpool(
+        vision.process_sent_data, payload.camera_width, payload.camera_height, telemetry
     )
+
+    if encoded[0] == -1:
+        return Base64ImageResponse(telemetry=telemetry, dot_x_normalized=None, dot_y_normalized=None)
+
+    return Base64ImageResponse(telemetry=telemetry, dot_x_normalized=encoded[0], dot_y_normalized=encoded[1])
 
 
 @router.post("/info", response_model=ImageInfo)

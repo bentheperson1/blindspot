@@ -49,25 +49,20 @@ class Settings(BaseModel):
 
 
 class UserMessage(BaseModel):
-    image: str  # base64 JPEG
-    width: int
-    height: int
     camera_width: int
     camera_height: int
 
     ts: int  # unix ms, client clock
     monotonic_ms: float
 
-    location: Location | None = None  # null until the first GPS fix
-    locationTimestamp: int | None = None  # unix ms of the GPS fix
+    location: Location | None = None
+    locationTimestamp: int | None = None
 
-    compass: Compass | None = None  # null until the first heading reading
+    compass: Compass | None = None
     motion: Motion | None = None
     magnetometer: Vec3 | None = None
 
     settings: Settings
-
-
 
 class Base64ImageRequest(BaseModel):
     image: str
@@ -81,7 +76,7 @@ class Telemetry(BaseModel):
     motion: Motion | None = None
     magnetometer: Vec3 | None = None
 
-
 class Base64ImageResponse(BaseModel):
-    image: str
     telemetry: Telemetry | None = None
+    dot_x_normalized: float | None = None
+    dot_y_normalized: float | None = None

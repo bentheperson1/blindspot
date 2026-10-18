@@ -30,22 +30,25 @@ export const PATHS = {
 };
 
 export type FrameResult = {
-  image?: string; // processed frame from the backend, base64 jpeg
+  image?: string; // processed frame from the backend, base64 jpeg (not sent by the backend right now)
   detections: Detection[];
+  dot?: { x: number; y: number } | null; // normalized 0–1 within the frame; null when the target isn't visible
   alert?: boolean;
   message?: string;
 };
 
+type FrameResponse = Partial<Omit<FrameResult, 'dot'>> & {
+  dot_x_normalized?: number | null;
+  dot_y_normalized?: number | null;
+};
+
 export async function sendFrame(
   apiUrl: string,
-  frame: { base64: string; width: number; height: number; cameraWidth: number; cameraHeight: number; monotonicMs: number; ts: number },
+  frame: { cameraWidth: number; cameraHeight: number; monotonicMs: number; ts: number },
   telemetry: Telemetry,
   settings: { radius_m: number; mode: TravelMode },
 ): Promise<FrameResult> {
   const body = JSON.stringify({
-    image: frame.base64,
-    width: frame.width,
-    height: frame.height,
     camera_width: frame.cameraWidth,
     camera_height: frame.cameraHeight,
     ts: frame.ts,
@@ -53,9 +56,14 @@ export async function sendFrame(
     ...telemetry,
     settings,
   });
+
   const res = await request(`${base(apiUrl)}${PATHS.frame}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
-  const json = (await res.json()) as Partial<FrameResult>;
-  return { image: json.image, detections: json.detections ?? [], alert: json.alert, message: json.message };
+  const json = (await res.json()) as FrameResponse;
+
+  const { dot_x_normalized: x, dot_y_normalized: y } = json;
+  const dot = typeof x === 'number' && typeof y === 'number' ? { x, y } : null;
+
+  return { image: json.image, detections: json.detections ?? [], dot, alert: json.alert, message: json.message };
 }
 
 export async function checkHealth(apiUrl: string): Promise<boolean> {

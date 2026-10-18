@@ -12,7 +12,7 @@ export const RADIUS_MIN_M = 0.5 * MILE;
 export const RADIUS_MAX_M = 5 * MILE;
 
 // AR frame upload: one frame at a time, then wait this long before the next.
-export const FRAME_INTERVAL_MS = 1000;
+export const FRAME_INTERVAL_MS = 10;
 export const FRAME_WIDTH_PX = 640;
 export const FRAME_JPEG_QUALITY = 0.6;
 

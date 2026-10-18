@@ -30,61 +30,49 @@ def ecef_to_enu(ecef_target, ecef_phone, lat_phone, lon_phone):
     
     return R.dot(delta)
 
-def get_rotation_matrix(yaw, pitch, roll):
-    y = np.radians(yaw)
-    p = np.radians(pitch)
-    r = np.radians(roll)
-    
-    R_yaw = np.array([
-        [np.cos(y), -np.sin(y), 0],
-        [np.sin(y), np.cos(y), 0],
-        [0, 0, 1]
-    ])
-    
-    R_pitch = np.array([
-        [1, 0, 0],
-        [0, np.cos(p), -np.sin(p)],
-        [0, np.sin(p), np.cos(p)]
-    ])
-    
-    R_roll = np.array([
-        [np.cos(r), 0, np.sin(r)],
-        [0, 1, 0],
-        [-np.sin(r), 0, np.cos(r)]
-    ])
-    
-    return R_roll.dot(R_pitch).dot(R_yaw)
+def get_rotation_matrix(alpha, beta, gamma):
+    """W3C device orientation: device frame -> ENU frame (Rz * Rx * Ry)."""
+    a, b, g = np.radians([alpha, beta, gamma])
+    Rz = np.array([[np.cos(a), -np.sin(a), 0],
+                   [np.sin(a),  np.cos(a), 0],
+                   [0, 0, 1]])
+    Rx = np.array([[1, 0, 0],
+                   [0, np.cos(b), -np.sin(b)],
+                   [0, np.sin(b),  np.cos(b)]])
+    Ry = np.array([[ np.cos(g), 0, np.sin(g)],
+                   [0, 1, 0],
+                   [-np.sin(g), 0, np.cos(g)]])
+    return Rz @ Rx @ Ry
 
-def project_to_screen(lat_p, lon_p, yaw, pitch, roll, lat_t, lon_t, screen_w=1080, screen_h=1920, hfov=60):
-    ecef_phone = geodetic_to_ecef(lat_p, lon_p)
-    ecef_target = geodetic_to_ecef(lat_t, lon_t)
-    
-    enu_coords = ecef_to_enu(ecef_target, ecef_phone, lat_p, lon_p)
-    
-    R_camera = get_rotation_matrix(yaw, pitch, roll)
-    camera_coords = R_camera.dot(enu_coords)
-    
-    xc, yc, zc = camera_coords
-    
+def yaw_corrected_matrix(alpha, beta, gamma, heading_deg):
+    R = get_rotation_matrix(alpha, beta, gamma)
+    fwd = R @ np.array([0.0, 0.0, -1.0])
+    h_motion = np.degrees(np.arctan2(fwd[0], fwd[1]))
+    d = np.radians(h_motion - heading_deg)
+    c, s = np.cos(d), np.sin(d)
+    Rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+    return Rz @ R
+
+def camera_heading(alpha, beta, gamma):
+    """Compass heading (deg) the rear camera is pointing at. Debug helper."""
+    fwd = get_rotation_matrix(alpha, beta, gamma) @ np.array([0.0, 0.0, -1.0])
+    return np.degrees(np.arctan2(fwd[0], fwd[1])) % 360
+
+
+def project_to_screen(lat_p, lon_p, alpha, beta, gamma, lat_t, lon_t, compass_heading, screen_w=1080, screen_h=1920, hfov=53):
+    enu = ecef_to_enu(geodetic_to_ecef(lat_t, lon_t),
+                      geodetic_to_ecef(lat_p, lon_p), lat_p, lon_p)
+
+    # ENU -> device frame (x right, y up, z out of the screen)
+    dev = yaw_corrected_matrix(alpha, beta, gamma, compass_heading).T @ enu
+
+    # Rear camera frame: x right, y down, z forward (device -z)
+    xc, yc, zc = dev[0], -dev[1], -dev[2]
+
     if zc <= 0:
         return [None, None]
-    
+
     fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
-    fy = fx 
-    cx, cy = screen_w / 2.0, screen_h / 2.0
-    
-    xs = (xc * fx / zc) + cx
-    ys = (yc * fy / zc) + cy
-    
-    if 0 <= xs <= screen_w and 0 <= ys <= screen_h:
-        return [round(xs, 2), round(ys, 2)]
-    else:
-        return [round(xs, 2), round(ys, 2)]
-
-if __name__ == "__main__":
-    start_lat, start_lon = 32.9857, -96.7502
-    target_lat, target_lon = 32.9860, -96.7505
-    yaw, pitch, roll = 0, 0, 0
-    result, message = project_to_screen(start_lat, start_lon, yaw, pitch, roll, target_lat, target_lon)
-
-    print(f"Screen coordinates: {result}, Status: {message}")
+    xs = xc * fx / zc + screen_w / 2.0
+    ys = yc * fx / zc + screen_h / 2.0
+    return [float(xs), float(ys)]
