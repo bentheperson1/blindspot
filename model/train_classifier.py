@@ -7,7 +7,9 @@ Train a Flock-camera photo classifier.
 Feature extractors (--features):
   hog   (default) classic computer vision written in numpy: HOG edge/shape patterns
         + color histograms. No PyTorch needed, so it runs natively on LinuxONE (s390x).
-  clip  pretrained CLIP ViT-B/32 (more accurate) - needs PyTorch, which has no s390x build.
+  clip  pretrained CLIP ViT-B/32 (likely more accurate) - needs PyTorch + transformers.
+        PyTorch has no s390x build on pip; run this inside IBM's LinuxONE Jupyter Lab ML
+        container, which ships both.
 
 Folders:
   data/camera/      photos WITH a Flock/ALPR camera
@@ -67,21 +69,27 @@ def hog_features(img, size=128, cell=8, bins=9):
 
 
 # ---------------------------------------------------------------- CLIP features
+# Uses Hugging Face transformers (no torchvision needed), which is preinstalled with
+# PyTorch in IBM's LinuxONE Jupyter Lab ML image (registry.linuxone.cloud.marist.edu/
+# l1cc/jupyterlab-image-s390x). Weights (~600 MB) download on first use.
+CLIP_MODEL = "openai/clip-vit-base-patch32"
+
+
 def load_clip():
-    import open_clip
-    model, _, preprocess = open_clip.create_model_and_transforms(
-        "ViT-B-32", pretrained="laion2b_s34b_b79k")
-    model.eval()
-    return model, preprocess
+    from transformers import CLIPImageProcessor, CLIPModel
+    processor = CLIPImageProcessor.from_pretrained(CLIP_MODEL)
+    model = CLIPModel.from_pretrained(CLIP_MODEL).eval()
+    return model, processor
 
 
-def clip_features(model, preprocess, images, batch_size=16):
+def clip_features(model, processor, images, batch_size=16):
     import torch
     feats = []
     with torch.no_grad():
         for i in range(0, len(images), batch_size):
-            batch = torch.stack([preprocess(im) for im in images[i:i + batch_size]])
-            f = model.encode_image(batch).float()
+            px = processor(images=images[i:i + batch_size], return_tensors="pt")["pixel_values"]
+            pooled = model.vision_model(pixel_values=px).pooler_output   # image transformer
+            f = model.visual_projection(pooled).float()                  # -> 512 numbers
             feats.append(torch.nn.functional.normalize(f, dim=-1).numpy())
     return np.concatenate(feats)
 
