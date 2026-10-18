@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic-settings
 python-multipart
-opencv-python-headless
+opencv-python-headless>=4.10,<5
 numpy
 joblib
 pillow
