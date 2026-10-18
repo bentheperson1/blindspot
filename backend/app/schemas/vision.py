@@ -76,6 +76,22 @@ class FlockCamera(BaseModel):
     heading: int
 
 
+class InputInfo(BaseModel):
+    lat_p: float
+    lon_p: float
+    alpha: float
+    beta: float
+    gamma: float
+    compass_heading: float
+    screen_w: int
+    screen_h: int
+    hfov: int
+
+
+class LocationInputInfo(InputInfo):
+    radius: int
+
+
 class UserMessage(BaseModel):
     camera_width: int
     camera_height: int
@@ -92,3 +108,4 @@ class UserMessage(BaseModel):
 
     settings: Settings
     flock_cameras: list[FlockCamera] | None = None
+    radius_m: float | None = None  # optional override of settings.radius_m

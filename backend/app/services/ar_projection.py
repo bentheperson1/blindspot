@@ -59,25 +59,6 @@ def camera_heading(alpha, beta, gamma):
     fwd = get_rotation_matrix(alpha, beta, gamma) @ np.array([0.0, 0.0, -1.0])
     return np.degrees(np.arctan2(fwd[0], fwd[1])) % 360
 
-
-def project_to_screen(lat_p, lon_p, alpha, beta, gamma, lat_t, lon_t, compass_heading, screen_w=1080, screen_h=1920, hfov=53):
-    enu = ecef_to_enu(geodetic_to_ecef(lat_t, lon_t),
-                      geodetic_to_ecef(lat_p, lon_p), lat_p, lon_p)
-
-    # ENU -> device frame (x right, y up, z out of the screen)
-    dev = yaw_corrected_matrix(alpha, beta, gamma, compass_heading).T @ enu
-
-    # Rear camera frame: x right, y down, z forward (device -z)
-    xc, yc, zc = dev[0], -dev[1], -dev[2]
-
-    if zc <= 0:
-        return [None, None]
-
-    fx = (screen_w / 2.0) / np.tan(np.radians(hfov) / 2.0)
-    xs = xc * fx / zc + screen_w / 2.0
-    ys = yc * fx / zc + screen_h / 2.0
-    return [float(xs), float(ys)]
-
 def yaw_corrected_matrix(alpha, beta, gamma, heading_deg):
     R = get_rotation_matrix(alpha, beta, gamma)
     fwd = R @ np.array([0.0, 0.0, -1.0])

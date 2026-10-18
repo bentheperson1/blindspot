@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, Dot, FlockCamera, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
-from app.services import vision
+from app.services import camera_store, vision
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -31,26 +31,30 @@ async def process_upload(file: UploadFile = File(...)):
 @router.post("/process-base64", response_model=Base64ImageResponse)
 async def process_base64(payload: UserMessage):
     telemetry = Telemetry.model_validate(payload.model_dump(include=set(Telemetry.model_fields)))
-
-    points = await run_in_threadpool(
-        vision.process_sent_data,
-        payload.flock_cameras or [FlockCamera(name="Test Camera", latitude=0.0, longitude=0.0, heading=0), FlockCamera(name="Test Camera 2", latitude=20.0, longitude=20.0, heading=0)],
-        payload.camera_width,
-        payload.camera_height,
-        telemetry,
-    )
+ 
+    if telemetry.location is None:
+        return Base64ImageResponse(telemetry=telemetry, dots=[])
+ 
+    def build_points():
+        cameras = camera_store.cameras_within(
+            telemetry.location.latitude,
+            telemetry.location.longitude,
+            payload.radius_m,
+        )
+        return vision.process_sent_data(cameras, payload.camera_width, payload.camera_height, telemetry)
+ 
+    points = await run_in_threadpool(build_points)
 
     dots = []
-    for p in points:
-        if p is None:
-            continue
-
-        x, y = float(p["x"]), float(p["y"])
-        dist_to_user = float(p["distance_to_user"])
-
-        if 0 <= x <= 1 and 0 <= y <= 1:
-            dots.append(Dot(name=p["name"], x=x, y=y, distance_to_user=dist_to_user))
-        
+    for p in points or []:
+        if p and 0 <= p["x"] <= 1 and 0 <= p["y"] <= 1:
+            dots.append(Dot(
+                name=p["name"],
+                x=float(p["x"]),
+                y=float(p["y"]),
+                distance_to_user=float(p["distance_to_user"]),
+            ))
+ 
     return Base64ImageResponse(telemetry=telemetry, dots=dots)
 
 
