@@ -75,3 +75,9 @@ class UserMessage(BaseModel):
     magnetometer: Vec3 | None = None
 
     settings: Settings
+    
+class FlockCamera(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    heading: int

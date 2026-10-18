@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health, images
+from app.api.routes import health, images, cameras
 from app.core.config import settings
 
 
@@ -26,3 +26,4 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(images.router)
+app.include_router(cameras.router)
