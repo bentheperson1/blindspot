@@ -8,13 +8,16 @@ import threading
 from pydantic import ValidationError
 
 from app.schemas.vision import FlockCamera
+from app.services.classifier import resolve
 
 logger = logging.getLogger("uvicorn.error")
 
 DEFAULT_RADIUS_M = 500
 CACHE_SECONDS = 300
 
-credential_path = os.getenv("DATABASE_CREDENTIALS", "C:\\Users\\fifth\\Downloads\\felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
+# Relative paths resolve against backend/, so ../keys is the repo root's keys folder.
+# Set DATABASE_CREDENTIALS to override; if the file is missing, Firestore is disabled.
+credential_path = str(resolve(os.getenv("DATABASE_CREDENTIALS", "../keys/firestore-key.json")))
 
 _db = None
 _unavailable_reason: str | None = None  # set once if Firebase can't be set up; we don't retry
