@@ -41,3 +41,9 @@ yarn-error.*
 /android
 
 .venv
+# ML outputs
+model_out/
+__pycache__/
+*.HEIC
+*.heic
+osm_cache/
