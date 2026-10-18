@@ -80,3 +80,9 @@ class Base64ImageResponse(BaseModel):
     telemetry: Telemetry | None = None
     dot_x_normalized: float | None = None
     dot_y_normalized: float | None = None
+    
+class FlockCamera(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    heading: int
