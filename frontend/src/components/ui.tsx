@@ -127,25 +127,36 @@ export function IconButton({
   );
 }
 
-/** Small status tag. Only "alert" uses the red highlight; everything else is neutral. */
+/**
+ * Small status tag. Only "alert" uses the red highlight; "clear" and "caution" are the snapshot
+ * verdict colors; everything else is neutral.
+ */
 export function Chip({
   label,
   tone = "surface",
 }: {
   label: string;
-  tone?: "alert" | "sage" | "lilac" | "surface" | "ink";
+  tone?: "alert" | "clear" | "caution" | "sage" | "lilac" | "surface" | "ink";
 }) {
   const c = useColors();
   const s = useThemedStyles(makeStyles);
-  const bg = tone === "alert" ? c.alert : tone === "ink" ? c.ink : c.surface;
-  const fg = tone === "alert" ? c.onAlert : tone === "ink" ? c.paper : c.ink;
+  const signal =
+    tone === "alert"
+      ? { bg: c.alert, fg: c.onAlert }
+      : tone === "clear"
+        ? { bg: c.clear, fg: c.onClear }
+        : tone === "caution"
+          ? { bg: c.caution, fg: c.onCaution }
+          : null;
+  const bg = signal ? signal.bg : tone === "ink" ? c.ink : c.surface;
+  const fg = signal ? signal.fg : tone === "ink" ? c.paper : c.ink;
   return (
     <View
       style={[
         s.chip,
         {
           backgroundColor: bg,
-          borderColor: tone === "alert" ? c.alert : c.outline,
+          borderColor: signal ? signal.bg : c.outline,
         },
       ]}
     >

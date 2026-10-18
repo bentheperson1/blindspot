@@ -56,7 +56,7 @@ function describeError(e: unknown): string {
  * AR view: live markers for license-plate cameras around you.
  * It downloads the nearby camera list from the backend and projects each camera onto the
  * screen on the phone (same math as the backend's project_to_screen), ~10×/s. Photo capture
- * and classification live on the Scan tab (see ClassifyScreen), not here.
+ * and classification live on the Report tab (see ClassifyScreen), not here.
  */
 export function ARScreen({
   snapshot,
