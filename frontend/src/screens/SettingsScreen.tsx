@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View, FlatList} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RadiusSlider } from '../components/RadiusSlider';
 import { useSettings } from '../settings';
@@ -25,6 +25,14 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 400);
   };
+
+  const credits = [
+    { name: 'Preston Crow', role: "Backend developer" },
+    { name: 'Amna Ashraf', role: "Data scientist" },
+    { name: 'Adya D', role: "Frontend developer" },
+    { name: 'Ben Holland', role: "Backend developer" },
+    { name: 'Jacob' , role: "Data scientist" }
+  ];
 
   return (
     <View style={styles.screen}>
@@ -101,6 +109,17 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
               />
             </Group>
 
+            <Group label="App Credits" note="This app was built in 24 hours for the 2026 IBM Z Datathon by a team of students from The University of Texas at Dallas.">
+              <View style={styles.credits_list}>
+                {credits.map((item) => (
+                  <Text key={item.name}>
+                    <Text style={styles.credits_name}>{item.name}</Text>
+                    <Text style={styles.credits_role}> - {item.role}</Text>
+                  </Text>
+                ))}
+              </View>
+            </Group>
+
           </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -153,6 +172,16 @@ function Choice<T extends string>({
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
+    credits_list: {
+      gap: 12,
+    },
+    credits_name: {
+      color: c.ink,
+      fontWeight: 'bold',
+    },
+    credits_role: {
+      color: c.muted,
+    },
     screen: { flex: 1, backgroundColor: c.paper },
     header: {
       paddingHorizontal: 16,
