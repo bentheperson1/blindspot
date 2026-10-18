@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { classifyCamera, type ClassifyResult } from "../api";
+import { classifyPhoto, type ClassifyResult } from "../api";
 import { Button, Chip, FramedCard, LogoMark } from "../components/ui";
 import { FRAME_JPEG_QUALITY, FRAME_WIDTH_PX } from "../config";
 import type { Telemetry } from "../sensors";
@@ -94,12 +94,7 @@ export function ClassifyScreen({
         base64: true,
       });
 
-      const res = await classifyCamera(apiUrl, {
-        image: small.base64 ?? "",
-        lat: loc?.latitude ?? null,
-        lon: loc?.longitude ?? null,
-        gpsAccuracy: loc?.accuracy ?? null,
-      });
+      const res = await classifyPhoto(apiUrl, small.base64 ?? "");
       setResult(res);
       setPhase("done");
     } catch (e) {
@@ -117,8 +112,7 @@ export function ClassifyScreen({
           Camera access needed
         </Text>
         <Text style={styles.permBody}>
-          Take a photo of a camera you spot and we'll send it to the server to check
-          whether it's a Flock camera.
+          Take a photo of a camera you spot and we'll check if it's a Flock camera.
         </Text>
         <Button
           label="Allow camera"
@@ -130,7 +124,9 @@ export function ClassifyScreen({
   }
 
   const showPreview = phase !== "idle" && shotUri;
-  const isFlock = result?.isFlock ?? false;
+  const verdict = result?.verdict ?? null;
+  const isFlock = verdict === "camera";
+  const unsure = verdict === "unsure_retake";
 
   return (
     <View style={styles.fill}>
@@ -162,7 +158,15 @@ export function ClassifyScreen({
       {/* Title, top left */}
       <FramedCard style={[styles.infoCard, { top: topInset - 40 }]}>
         <Chip
-          label={phase === "done" ? (isFlock ? "Flock" : "Not Flock") : "Report"}
+          label={
+            phase === "done"
+              ? isFlock
+                ? "Flock"
+                : unsure
+                  ? "Unsure"
+                  : "Not Flock"
+              : "Report"
+          }
           tone={phase === "done" && isFlock ? "alert" : "surface"}
         />
         <Text style={styles.infoTitle}>
@@ -174,7 +178,9 @@ export function ClassifyScreen({
                 ? "Something went wrong"
                 : isFlock
                   ? "Flock camera"
-                  : "Not a Flock camera"}
+                  : unsure
+                    ? "Not sure"
+                    : "Not a Flock camera"}
         </Text>
       </FramedCard>
 
@@ -224,22 +230,31 @@ export function ClassifyScreen({
                     { color: isFlock ? colors.onAlert : colors.muted },
                   ]}
                 >
-                  {isFlock ? "!" : "–"}
+                  {isFlock ? "!" : unsure ? "?" : "–"}
                 </Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.headline}>
-                  {isFlock ? "It's a Flock camera" : "Not a Flock camera"}
+                  {isFlock
+                    ? "It's a Flock camera"
+                    : unsure
+                      ? "Not sure — try again"
+                      : "Not a Flock camera"}
                 </Text>
                 <Text style={styles.verdictSub}>
-                  {result.cameraType} · {Math.round(result.confidence * 100)}% confident
+                  {Math.round(result.camera_probability * 100)}% camera ·{" "}
+                  {Math.round(result.latency_ms)} ms
                 </Text>
               </View>
             </View>
 
-            {result.message ? (
-              <Text style={styles.body}>{result.message}</Text>
-            ) : null}
+            <Text style={styles.body}>
+              {isFlock
+                ? "This looks like a Flock automated license-plate reader."
+                : unsure
+                  ? "Couldn't tell for sure. Move closer and take a clearer photo."
+                  : "This doesn't look like a Flock camera."}
+            </Text>
 
             <Text style={styles.foot}>
               {coords

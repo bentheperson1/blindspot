@@ -1,6 +1,5 @@
 import base64
 import binascii
-import hashlib
 
 import numpy as np
 
@@ -61,37 +60,6 @@ def encode_image(image: np.ndarray, ext: str = ".jpg", quality: int = 90) -> byt
 
 	return encoded.tobytes()
 
-
-
-# INSERT ACTUAL MODEL HERE
-_FLOCK_TYPES = [
-    "Flock Safety Falcon",
-    "Flock Safety Falcon Flex",
-    "Flock Safety Raven",
-]
-_OTHER_TYPES = [
-    "Traffic camera",
-    "Security camera",
-    "Not a camera",
-    "Unknown device",
-]
-
-def classify_camera(image: np.ndarray, lat: float | None, lon: float | None) -> dict:
-    digest = int(hashlib.sha1(image.tobytes()).hexdigest(), 16)
-    is_flock = (digest % 2) == 0
-    confidence = round(0.6 + (digest % 40) / 100.0, 2)  # 0.60–0.99
-    if is_flock:
-        camera_type = _FLOCK_TYPES[digest % len(_FLOCK_TYPES)]
-        message = "Looks like a Flock automated license-plate reader."
-    else:
-        camera_type = _OTHER_TYPES[digest % len(_OTHER_TYPES)]
-        message = "This doesn't match a Flock camera."
-    return {
-        "is_flock": is_flock,
-        "camera_type": camera_type,
-        "confidence": confidence,
-        "message": message,
-    }
 
 
 def process_sent_data(flock_cameras: list[FlockCamera], source_width: int, source_height: int, telemetry: Telemetry) -> list | None:

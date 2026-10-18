@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile, WebSoc
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, ClassifyRequest, ClassifyResponse, Dot, FlockCamera, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
+from app.schemas.vision import Base64ImageRequest, Base64ImageResponse, Dot, FlockCamera, ImageInfo, UserMessage, ImageInfo, Telemetry, UserMessage
 from app.services import camera_store, vision
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -69,22 +69,6 @@ async def process_base64(payload: UserMessage):
             ))
  
     return Base64ImageResponse(telemetry=telemetry, dots=dots)
-
-
-@router.post("/classify", response_model=ClassifyResponse)
-async def classify(payload: ClassifyRequest):
-    data = vision.decode_base64(payload.image)
-    check_size(data)
-
-    try:
-        image = await run_in_threadpool(vision.decode_image, data)
-    except vision.InvalidImageError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    verdict = await run_in_threadpool(
-        vision.classify_camera, image, payload.lat, payload.lon
-    )
-    return ClassifyResponse(**verdict)
 
 
 @router.post("/info", response_model=ImageInfo)
