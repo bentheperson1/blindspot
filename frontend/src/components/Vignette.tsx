@@ -16,14 +16,21 @@ export function Vignette({
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    let cancelled = false;
-    let pulse: Animated.CompositeAnimation | null = null;
+  let cancelled = false;
 
-    // Not native-driven on purpose: a native loop leaves the JS-side value stale,
-    // so an interrupting fade-out computes its start frame from the wrong value and
-    // snaps straight to 0. On the JS driver the value stays in sync every frame, so
-    // the fade-out always eases from the glow's real current opacity.
-    opacity.stopAnimation();
+  opacity.stopAnimation();
+
+  const pulseTo = (toValue: number) => {
+      Animated.timing(opacity, {
+        toValue,
+        duration: 900,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }).start(({ finished }) => {
+        if (!finished || cancelled) return;
+        pulseTo(toValue === 1 ? 0.55 : 1);
+      });
+    };
 
     if (!active) {
       Animated.timing(opacity, {
@@ -41,29 +48,13 @@ export function Vignette({
         useNativeDriver: false,
       }).start(({ finished }) => {
         if (!finished || cancelled) return;
-        pulse = Animated.loop(
-          Animated.sequence([
-            Animated.timing(opacity, {
-              toValue: 0.55,
-              duration: 900,
-              easing: Easing.inOut(Easing.quad),
-              useNativeDriver: false,
-            }),
-            Animated.timing(opacity, {
-              toValue: 1,
-              duration: 900,
-              easing: Easing.inOut(Easing.quad),
-              useNativeDriver: false,
-            }),
-          ]),
-        );
-        pulse.start();
+        pulseTo(0.55);
       });
     }
 
     return () => {
       cancelled = true;
-      pulse?.stop();
+      opacity.stopAnimation();
     };
   }, [active, opacity]);
 
@@ -78,14 +69,14 @@ export function Vignette({
             id="vignette"
             cx="50%"
             cy="50%"
-            rx="75%"
-            ry="65%"
+            rx="65%"
+            ry="55%"
             fx="50%"
             fy="50%"
           >
-            <Stop offset="0.55" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.8" stopColor={color} stopOpacity={0.35} />
-            <Stop offset="1" stopColor={color} stopOpacity={0.8} />
+            <Stop offset="0.4" stopColor={color} stopOpacity={0} />
+            <Stop offset="0.7" stopColor={color} stopOpacity={0.35} />
+            <Stop offset="1" stopColor={color} stopOpacity={1} />
           </RadialGradient>
         </Defs>
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#vignette)" />
