@@ -40,12 +40,12 @@ export const PaperBackground = memo(function PaperBackground({
   return (
     <View
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { backgroundColor: c.paper }, style]}
+      style={[StyleSheet.absoluteFill, { backgroundColor: c.surface }, style]}
     />
   );
 });
 
-/** Flat rectangular button. Primary = filled, secondary = outlined. */
+/** M3 button. Primary = filled (primary), secondary = outlined (outline border, primary label). */
 export function Button({
   label,
   onPress,
@@ -74,9 +74,9 @@ export function Button({
       ]}
     >
       {icon && (
-        <Feather name={icon} size={18} color={primary ? c.onPrimary : c.ink} />
+        <Feather name={icon} size={18} color={primary ? c.onPrimary : c.primary} />
       )}
-      <Text style={[s.btnText, { color: primary ? c.onPrimary : c.ink }]}>
+      <Text style={[s.btnText, { color: primary ? c.onPrimary : c.primary }]}>
         {label}
       </Text>
     </Pressable>
@@ -105,7 +105,7 @@ export function IconButton({
   const c = useColors();
   const s = useThemedStyles(makeStyles);
   const primary = tone === "primary";
-  const ink = primary ? c.onPrimary : c.ink;
+  const ink = primary ? c.onPrimary : c.onSurface;
   return (
     <Pressable
       onPress={onPress}
@@ -128,35 +128,37 @@ export function IconButton({
 }
 
 /**
- * Small status tag. Only "alert" uses the red highlight; "clear" and "caution" are the snapshot
- * verdict colors; everything else is neutral.
+ * Small status tag, drawn from M3 container roles. "alert" is the logo-red "camera in view"
+ * signal; "success" / "warning" are the snapshot verdict colors; "neutral" is everything else.
  */
+export type ChipTone = "alert" | "success" | "warning" | "neutral";
+
 export function Chip({
   label,
-  tone = "surface",
+  tone = "neutral",
 }: {
   label: string;
-  tone?: "alert" | "clear" | "caution" | "sage" | "lilac" | "surface" | "ink";
+  tone?: ChipTone;
 }) {
   const c = useColors();
   const s = useThemedStyles(makeStyles);
   const signal =
     tone === "alert"
       ? { bg: c.alert, fg: c.onAlert }
-      : tone === "clear"
-        ? { bg: c.clear, fg: c.onClear }
-        : tone === "caution"
-          ? { bg: c.caution, fg: c.onCaution }
+      : tone === "success"
+        ? { bg: c.successContainer, fg: c.onSuccessContainer }
+        : tone === "warning"
+          ? { bg: c.warningContainer, fg: c.onWarningContainer }
           : null;
-  const bg = signal ? signal.bg : tone === "ink" ? c.ink : c.surface;
-  const fg = signal ? signal.fg : tone === "ink" ? c.paper : c.ink;
+  const bg = signal ? signal.bg : c.surfaceContainerHigh;
+  const fg = signal ? signal.fg : c.onSurfaceVariant;
   return (
     <View
       style={[
         s.chip,
         {
           backgroundColor: bg,
-          borderColor: signal ? signal.bg : c.outline,
+          borderColor: signal ? signal.bg : c.outlineVariant,
         },
       ]}
     >
@@ -165,7 +167,7 @@ export function Chip({
   );
 }
 
-/** Plain bordered card. */
+/** M3 outlined card. */
 export function FramedCard({
   children,
   radius = radii.card,
@@ -183,7 +185,7 @@ export function FramedCard({
     <View
       style={[
         s.card,
-        { borderRadius: radius, backgroundColor: tint ?? c.surface },
+        { borderRadius: radius, backgroundColor: tint ?? c.surfaceContainerLow },
         style,
       ]}
     >
@@ -238,18 +240,19 @@ export function LogoMark({ size, label }: { size: number; label?: string }) {
   );
 }
 
-export type Tab = "map" | "ar" | "classify" | "settings";
+export type Tab = "map" | "classify" |"ar" | "faq" | "settings";
 
 export const TAB_BAR_H = 62;
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: "map", label: "Map", icon: "map" },
-  { key: "ar", label: "Camera", icon: "camera" },
   { key: "classify", label: "Report", icon: "aperture" },
+  { key: "ar", label: "Camera", icon: "camera" },
+  { key: "faq", label: "FAQ", icon: "help-circle" },
   { key: "settings", label: "Settings", icon: "settings" },
 ];
 
-/** Bottom navigation: three labeled tabs, always visible. The active tab gets a red bar on top. */
+/** Bottom navigation: labeled tabs, always visible. The active tab gets a primary-colored bar on top. */
 export function TabBar({
   value,
   onChange,
@@ -292,20 +295,20 @@ export function TabBar({
             onPress={() => onChange(t.key)}
             style={({ pressed }) => [
               s.tab,
-              pressed && { backgroundColor: c.cream },
+              pressed && { backgroundColor: c.surfaceContainerHighest },
             ]}
             accessibilityRole="tab"
             accessibilityLabel={t.label}
             accessibilityState={{ selected: on }}
           >
             <View
-              style={[s.tabIndicator, on && { backgroundColor: c.alert }]}
+              style={[s.tabIndicator, on && { backgroundColor: c.primary }]}
             />
-            <Feather name={t.icon} size={22} color={on ? c.ink : c.muted} />
+            <Feather name={t.icon} size={22} color={on ? c.onSurface : c.onSurfaceVariant} />
             <Text
               style={[
                 s.tabText,
-                { color: on ? c.ink : c.muted },
+                { color: on ? c.onSurface : c.onSurfaceVariant },
                 on && { fontFamily: fonts.sansHeavy },
               ]}
             >
@@ -340,7 +343,7 @@ export const CompassBadge = memo(function CompassBadge({
         heading == null ? "Compass not ready" : `Heading ${label}`
       }
     >
-      <Feather name="compass" size={16} color={c.ink} />
+      <Feather name="compass" size={16} color={c.onSurfaceVariant} />
       <Text style={s.compassText}>{label}</Text>
     </View>
   );
@@ -360,15 +363,15 @@ const makeStyles = (c: Palette) =>
       paddingHorizontal: 16,
     },
     btnPrimary: { backgroundColor: c.primary, borderColor: c.primary },
-    btnSecondary: { backgroundColor: c.surface, borderColor: c.outline },
+    btnSecondary: { backgroundColor: "transparent", borderColor: c.outline },
     btnText: { fontFamily: fonts.sansBold, fontSize: 16 },
     iconBtn: {
       flexDirection: "row",
       gap: 8,
       borderRadius: radii.icon,
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerHigh,
       borderWidth: BORDER,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -382,16 +385,16 @@ const makeStyles = (c: Palette) =>
       justifyContent: "center",
     },
     chipText: { fontFamily: fonts.sansHeavy, fontSize: 11, letterSpacing: 0.6 },
-    card: { borderWidth: BORDER, borderColor: c.outline, overflow: "hidden" },
+    card: { borderWidth: BORDER, borderColor: c.outlineVariant, overflow: "hidden" },
     tabBar: {
       position: "absolute",
       left: 0,
       right: 0,
       bottom: 0,
       flexDirection: "row",
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainer,
       borderTopWidth: BORDER,
-      borderTopColor: c.outline,
+      borderTopColor: c.outlineVariant,
     },
     tab: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
     tabIndicator: {
@@ -407,12 +410,12 @@ const makeStyles = (c: Palette) =>
       height: 40,
       paddingHorizontal: 10,
       borderRadius: radii.icon,
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerHigh,
       borderWidth: BORDER,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
     },
-    compassText: { fontFamily: fonts.sansBold, fontSize: 13, color: c.ink },
+    compassText: { fontFamily: fonts.sansBold, fontSize: 13, color: c.onSurface },
   });

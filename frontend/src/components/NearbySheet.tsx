@@ -64,7 +64,7 @@ export function NearbySheet({
           {backend !== "error" && inView && (
             <Chip label="In view" tone="alert" />
           )}
-          {backend !== "error" && !nearest && <Chip label="Clear" />}
+          {backend !== "error" && !nearest && <Chip label="Clear" tone="success" />}
         </View>
       </View>
 
@@ -108,46 +108,46 @@ const makeStyles = (c: Palette) =>
       position: "absolute",
       left: 0,
       right: 0,
-      backgroundColor: c.paper,
+      backgroundColor: c.surfaceContainerLow,
       borderTopWidth: BORDER,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
       paddingTop: 14,
       paddingBottom: 12,
       paddingHorizontal: 16,
       gap: 12,
     },
     head: { gap: 4 },
-    title: { fontFamily: fonts.heading, fontSize: 20, color: c.ink },
+    title: { fontFamily: fonts.heading, fontSize: 20, color: c.onSurface },
     subRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
       flexWrap: "wrap",
     },
-    sub: { fontFamily: fonts.sans, fontSize: 14, color: c.muted },
+    sub: { fontFamily: fonts.sans, fontSize: 14, color: c.onSurfaceVariant },
     tiles: { flexDirection: "row", gap: 8 },
     tile: {
       flex: 1,
       borderRadius: radii.tile,
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerHigh,
       borderWidth: BORDER_THIN,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
       paddingVertical: 8,
       paddingHorizontal: 10,
       gap: 2,
     },
-    tileValue: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
+    tileValue: { fontFamily: fonts.sansBold, fontSize: 16, color: c.onSurface },
     tileLabel: {
       fontFamily: fonts.sansBold,
       fontSize: 10,
       letterSpacing: 0.6,
-      color: c.muted,
+      color: c.onSurfaceVariant,
     },
     sliderBox: {
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerHigh,
       borderRadius: radii.tile,
       borderWidth: BORDER_THIN,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
       paddingHorizontal: 12,
       paddingTop: 8,
       paddingBottom: 2,

@@ -19,6 +19,7 @@ import { useMapCameras } from "./src/cameraList";
 import { ARScreen } from "./src/screens/ARScreen";
 import { ClassifyScreen } from "./src/screens/ClassifyScreen";
 import { MapScreen } from "./src/screens/MapScreen";
+import { FaqScreen } from "./src/screens/FaqScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { useTelemetry } from "./src/sensors";
 import { SettingsProvider, useSettings } from "./src/settings";
@@ -86,8 +87,10 @@ function Main() {
   const { position, heading, permission, snapshot } = useTelemetry();
   const [backend, setBackend] = useState<BackendStatus>("off");
   const [sheetHeight, setSheetHeight] = useState(320);
-  // Tabs: Map and Camera are remembered between launches (settings.view); Settings is just a screen.
+  // Tabs: Map and Camera are remembered between launches (settings.view); FAQ and Settings are just screens.
   const [tab, setTab] = useState<Tab>(settings.view);
+  // FAQ and Settings are plain scrolling pages: no compass or location banner floating over them.
+  const fullPage = tab === "faq" || tab === "settings";
   const goTo = (t: Tab) => {
     setTab(t);
     // Only the Map and Camera tabs are remembered between launches (settings.view is a ViewMode).
@@ -146,10 +149,11 @@ function Main() {
           bottomInset={tabBarH}
         />
       )}
+      {tab === "faq" && <FaqScreen bottomInset={tabBarH} />}
       {tab === "settings" && <SettingsScreen bottomInset={tabBarH} />}
 
       {/* Compass, top right, on the Map and Camera tabs */}
-      {tab !== "settings" && (
+      {!fullPage && (
         <View
           style={[styles.topBar, { top: topBarTop }]}
           pointerEvents="box-none"
@@ -158,7 +162,7 @@ function Main() {
         </View>
       )}
 
-      {permission === "denied" && tab !== "settings" && (
+      {permission === "denied" && !fullPage && (
         <View style={[styles.banner, { top: belowTopBar + 12 }]}>
           <Text style={styles.bannerText}>
             Location is off. Turn it on in your phone's settings so the server
@@ -174,7 +178,7 @@ function Main() {
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    root: { flex: 1, backgroundColor: c.paper },
+    root: { flex: 1, backgroundColor: c.surface },
     topBar: {
       position: "absolute",
       left: 16,
@@ -187,15 +191,15 @@ const makeStyles = (c: Palette) =>
       position: "absolute",
       left: 16,
       right: 72,
-      backgroundColor: c.surface,
+      backgroundColor: c.errorContainer,
       borderRadius: radii.tile,
       borderWidth: BORDER,
-      borderColor: c.outline,
+      borderColor: c.errorContainer,
       padding: 12,
     },
     bannerText: {
       fontFamily: fonts.sansBold,
-      color: c.ink,
+      color: c.onErrorContainer,
       fontSize: 14,
       lineHeight: 19,
     },

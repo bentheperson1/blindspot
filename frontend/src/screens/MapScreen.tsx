@@ -6,7 +6,7 @@ import { IconButton } from "../components/ui";
 import { CAMERA_FOV_DEG, CAMERA_FOV_RANGE_M, UTD_CENTER } from "../config";
 import { formatDistance, fovPolygon } from "../geo";
 import { useSettings } from "../settings";
-import { BORDER, useColors, useThemedStyles, type Palette } from "../theme";
+import { BORDER, useColors, useThemedStyles, withAlpha, type Palette } from "../theme";
 import type { Camera, LatLng } from "../types";
 
 // The marker's size at the radius-fit zoom; the actual box scales with the zoom (see markerSize).
@@ -116,8 +116,8 @@ export function MapScreen({
         <Circle
           center={center}
           radius={radius}
-          fillColor={colors.radiusFill}
-          strokeColor={colors.radiusStroke}
+          fillColor={withAlpha(colors.primary, 0.1)}
+          strokeColor={colors.primary}
           strokeWidth={2}
         />
 
@@ -134,8 +134,8 @@ export function MapScreen({
               {cone && cone.length > 2 && (
                 <Polygon
                   coordinates={cone}
-                  fillColor={colors.cone}
-                  strokeColor={colors.coneStroke}
+                  fillColor={withAlpha(colors.onSurface, 0.18)}
+                  strokeColor={colors.onSurfaceVariant}
                   strokeWidth={1.5}
                 />
               )}
@@ -164,7 +164,7 @@ export function MapScreen({
                   <Feather
                     name="video"
                     size={markerIconSize}
-                    color={hot ? colors.onAlert : colors.alert}
+                    color={hot ? colors.onAlert : colors.primary}
                   />
                 </View>
               </Marker>
@@ -209,29 +209,30 @@ const makeStyles = (c: Palette) =>
       width: 34,
       height: 34,
       borderRadius: 6,
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerHigh,
       borderWidth: BORDER,
       borderColor: c.outline,
       alignItems: "center",
       justifyContent: "center",
     },
-    markerHot: { backgroundColor: c.alert },
+    markerHot: { backgroundColor: c.alert, borderColor: c.alert },
     controls: { position: "absolute", right: 16, alignItems: "center" },
     zoomStack: { gap: 8 },
     recenter: { position: "absolute", right: 16 },
   });
 
-// Google Maps styles (Android) built from tints/shades of indigo and cream: quiet cream land, pale roads, muted water.
+// Google Maps styles (Android) built from the M3 neutral / neutral-variant tonal palettes (tone noted per
+// value), so the map sits on the same surfaces as the UI: quiet land, bright roads, muted water.
 const STORYBOOK_LIGHT = [
-  { elementType: "geometry", stylers: [{ color: "#F2F0E3" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#636575" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#EEEBDA" }] },
+  { elementType: "geometry", stylers: [{ color: "#F6F2F6" }] }, // N96
+  { elementType: "labels.text.fill", stylers: [{ color: "#46464E" }] }, // NV30
+  { elementType: "labels.text.stroke", stylers: [{ color: "#FCF8FB" }] }, // N98
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.park", stylers: [{ visibility: "on" }] },
   {
     featureType: "poi.park",
     elementType: "geometry",
-    stylers: [{ color: "#D0CEC4" }],
+    stylers: [{ color: "#E5E1E5" }], // N90
   },
   {
     featureType: "poi.park",
@@ -242,40 +243,40 @@ const STORYBOOK_LIGHT = [
   {
     featureType: "road",
     elementType: "geometry.fill",
-    stylers: [{ color: "#F8F7F0" }],
+    stylers: [{ color: "#FFFFFF" }], // N100
   },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#C6C5BD" }],
+    stylers: [{ color: "#C7C5CE" }], // NV80
   },
   {
     featureType: "road.highway",
     elementType: "geometry.fill",
-    stylers: [{ color: "#DEDCCE" }],
+    stylers: [{ color: "#EAE7EA" }], // N92
   },
   {
     featureType: "landscape.man_made",
     elementType: "geometry",
-    stylers: [{ color: "#E4E1D3" }],
+    stylers: [{ color: "#F0EDF0" }], // N94
   },
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#B7B5B2" }],
+    stylers: [{ color: "#ACAAB3" }], // NV70
   },
 ];
 
 const STORYBOOK_DARK = [
-  { elementType: "geometry", stylers: [{ color: "#303350" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#B3B1AF" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#282B4A" }] },
+  { elementType: "geometry", stylers: [{ color: "#201F22" }] }, // N12
+  { elementType: "labels.text.fill", stylers: [{ color: "#C7C5CE" }] }, // NV80
+  { elementType: "labels.text.stroke", stylers: [{ color: "#131315" }] }, // N6
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.park", stylers: [{ visibility: "on" }] },
   {
     featureType: "poi.park",
     elementType: "geometry",
-    stylers: [{ color: "#40425B" }],
+    stylers: [{ color: "#2A2A2C" }], // N17
   },
   {
     featureType: "poi.park",
@@ -286,26 +287,26 @@ const STORYBOOK_DARK = [
   {
     featureType: "road",
     elementType: "geometry.fill",
-    stylers: [{ color: "#464860" }],
+    stylers: [{ color: "#353437" }], // N22
   },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#282B4A" }],
+    stylers: [{ color: "#131315" }], // N6
   },
   {
     featureType: "road.highway",
     elementType: "geometry.fill",
-    stylers: [{ color: "#58596D" }],
+    stylers: [{ color: "#474649" }], // N30
   },
   {
     featureType: "landscape.man_made",
     elementType: "geometry",
-    stylers: [{ color: "#363854" }],
+    stylers: [{ color: "#1C1B1E" }], // N10
   },
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#1C1E34" }],
+    stylers: [{ color: "#0E0E10" }], // N4
   },
 ];

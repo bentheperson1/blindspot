@@ -75,7 +75,7 @@ export function Vignette({
             fy="50%"
           >
             <Stop offset="0.4" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.7" stopColor={color} stopOpacity={0.35} />
+            <Stop offset="0.7" stopColor={color} stopOpacity={0.55} />
             <Stop offset="1" stopColor={color} stopOpacity={1} />
           </RadialGradient>
         </Defs>
