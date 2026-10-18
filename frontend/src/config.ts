@@ -12,7 +12,26 @@ export const RADIUS_MIN_M = 0.5 * MILE;
 export const RADIUS_MAX_M = 5 * MILE;
 
 // AR frame upload: one frame at a time, then wait this long before the next.
-export const FRAME_INTERVAL_MS = 1000;
+// Each upload takes a full photo, which briefly stalls the camera preview, so keep this slow.
+export const FRAME_INTERVAL_MS = 5000;
+// Set to false to stop photo uploads entirely (smoothest camera view). Markers don't need them.
+export const SEND_FRAMES = true;
+
+// Camera list cache for the Camera tab: how often to re-download nearby cameras (lat/long) from the backend.
+// In between, markers are placed on the phone from the cached list ~10×/s, with no network calls.
+export const CAMERA_LIST_REFRESH_MS = { pedestrian: 30_000, driver: 5_000 } as const;
+// Also re-download early if you've moved this far (as a fraction of the search radius) since the last download.
+export const CAMERA_LIST_MOVE_FRACTION = 0.25;
+// How often markers are re-placed from the cached list.
+export const MARKER_UPDATE_MS = 100;
+
+// Marker accuracy.
+// Heading smoothing: the gyro tracks quick turns; the compass only slowly corrects it toward north.
+// Fraction of the gap closed per marker update (0.08 at 10×/s ≈ settles in ~1.5 s). Lower = steadier, slower to correct.
+export const HEADING_SMOOTHING = 0.08;
+// Heights used to place markers vertically: Flock cameras sit high on poles; the phone is held around chest height.
+export const CAMERA_MOUNT_HEIGHT_M = 4.5;
+export const PHONE_HEIGHT_M = 1.4;
 export const FRAME_WIDTH_PX = 640;
 export const FRAME_JPEG_QUALITY = 0.6;
 
