@@ -59,7 +59,7 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
               <RadiusSlider />
             </Group>
 
-            <Group label="Getting around" note="Sent to the server with every frame.">
+            <Group label="Getting around" note="">
               <Choice
                 options={[
                   { value: 'pedestrian', label: 'Walking' },
@@ -81,7 +81,7 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
               />
             </Group>
 
-            <Group label="Server address" note="Where camera frames and sensor data are sent.">
+            <Group label="Server address" note="Change this if you're hosting your own server.">
               <TextInput
                 style={styles.input}
                 value={url}

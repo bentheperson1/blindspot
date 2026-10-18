@@ -76,6 +76,7 @@ export function useMapCameras(enabled: boolean, apiUrl: string, position: LatLng
         name: c.name,
         latitude: c.latitude,
         longitude: c.longitude,
+        heading: c.heading,
         distance_m: metersBetween(here.latitude, here.longitude, c.latitude, c.longitude),
       }))
       .filter((c) => c.distance_m <= radius_m)

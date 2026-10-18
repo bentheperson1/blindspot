@@ -1,13 +1,16 @@
 import { Feather } from "@expo/vector-icons";
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import MapView, { Circle, Marker, Polygon } from "react-native-maps";
 import { IconButton } from "../components/ui";
-import { UTD_CENTER } from "../config";
-import { formatDistance } from "../geo";
+import { CAMERA_FOV_DEG, CAMERA_FOV_RANGE_M, UTD_CENTER } from "../config";
+import { formatDistance, fovPolygon } from "../geo";
 import { useSettings } from "../settings";
 import { BORDER, useColors, useThemedStyles, type Palette } from "../theme";
 import type { Camera, LatLng } from "../types";
+
+// The marker's size at the radius-fit zoom; the actual box scales with the zoom (see markerSize).
+const MARKER_BASE_SIZE = 34;
 
 /**
  * Draws exactly what the backend returned: no distance or filtering math on the phone.
@@ -30,10 +33,30 @@ export function MapScreen({
   const mapRef = useRef<MapView>(null);
   const center = position ?? UTD_CENTER;
 
+  // The span of latitude currently on screen. Small = zoomed in, large = zoomed out.
+  // We scale the camera markers off this so they grow and shrink with the zoom, like the
+  // field-of-view cones (which are geographic and scale on their own).
+  const fitDelta = (radius * 2.6) / 111_320;
+  const [latDelta, setLatDelta] = useState(fitDelta);
+  // react-native-maps only redraws a marker's view while tracksViewChanges is true, which is
+  // expensive to leave on. Turn it on briefly whenever the zoom settles, then back off.
+  const [tracking, setTracking] = useState(true);
+  useEffect(() => {
+    setTracking(true);
+    const t = setTimeout(() => setTracking(false), 400);
+    return () => clearTimeout(t);
+  }, [latDelta]);
+
+  // scale = 1 at the radius-fit zoom; clamped so markers never vanish or swamp the map.
+  // Drives the marker's real layout size (not a transform — a transform fights the native
+  // anchor snapshot and the marker drifts off its coordinate).
+  const markerScale = Math.max(0.7, Math.min(0.75, fitDelta / latDelta));
+  const markerSize = Math.round(MARKER_BASE_SIZE * markerScale);
+  const markerIconSize = Math.round(markerSize * (16 / MARKER_BASE_SIZE));
+
   const fitRadius = () => {
-    const delta = (radius * 2.6) / 111_320;
     mapRef.current?.animateToRegion(
-      { ...center, latitudeDelta: delta, longitudeDelta: delta * 1.2 },
+      { ...center, latitudeDelta: fitDelta, longitudeDelta: fitDelta * 1.2 },
       400,
     );
   };
@@ -80,6 +103,7 @@ export function MapScreen({
         showsPointsOfInterests={false}
         toolbarEnabled={false}
         userInterfaceStyle={colors.scheme}
+        onRegionChangeComplete={(r) => setLatDelta(r.latitudeDelta)}
         mapType={Platform.OS === "ios" ? "mutedStandard" : "standard"}
         customMapStyle={
           Platform.OS === "android"
@@ -99,11 +123,17 @@ export function MapScreen({
 
         {cameras.map((c, i) => {
           const hot = i === 0 || !!c.alert;
+          // Field-of-view wedge from the camera's stored heading (opening angle set internally).
+          // Fall back to a backend-supplied polygon if one is present and there's no heading.
+          const cone =
+            c.heading != null
+              ? fovPolygon(c.latitude, c.longitude, c.heading, CAMERA_FOV_DEG, CAMERA_FOV_RANGE_M)
+              : c.cone;
           return (
             <Fragment key={c.id}>
-              {c.cone && c.cone.length > 2 && (
+              {cone && cone.length > 2 && (
                 <Polygon
-                  coordinates={c.cone}
+                  coordinates={cone}
                   fillColor={colors.cone}
                   strokeColor={colors.coneStroke}
                   strokeWidth={1.5}
@@ -118,12 +148,22 @@ export function MapScreen({
                     : undefined
                 }
                 anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
+                tracksViewChanges={tracking}
               >
-                <View style={[styles.marker, hot && styles.markerHot]}>
+                <View
+                  style={[
+                    styles.marker,
+                    hot && styles.markerHot,
+                    {
+                      width: markerSize,
+                      height: markerSize,
+                      borderRadius: markerSize * 0.18,
+                    },
+                  ]}
+                >
                   <Feather
                     name="video"
-                    size={16}
+                    size={markerIconSize}
                     color={hot ? colors.onAlert : colors.alert}
                   />
                 </View>

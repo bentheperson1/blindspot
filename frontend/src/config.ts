@@ -37,3 +37,9 @@ export const FRAME_JPEG_QUALITY = 0.6;
 
 // Map: how often to re-ask the backend for nearby cameras.
 export const CAMERA_REFRESH_MS = 5000;
+
+// Field-of-view wedge drawn on the map for each camera, from its stored heading.
+// Tune these two to change how the wedge looks: CAMERA_FOV_DEG is the opening angle,
+// CAMERA_FOV_RANGE_M is how far it reaches.
+export const CAMERA_FOV_DEG = 45;
+export const CAMERA_FOV_RANGE_M = 75;

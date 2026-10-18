@@ -50,6 +50,7 @@ import { useSettings } from "../settings";
 import { BORDER, fonts, radii, useThemedStyles, type Palette } from "../theme";
 import type { BackendStatus, Detection } from "../types";
 
+const PIN_SMOOTH_MS = 65;
 // Fixed at no zoom so the focal length doesn't change under the backend. Sent with every frame in `extra.lens`.
 const CAMERA_ZOOM = 0;
 // How often to ask /cameras/nearby where cameras are on screen. Only sensor data is sent, so it can run faster than frames.
@@ -137,6 +138,9 @@ export function ARScreen({
   const shownDistRef = useRef<Map<number, number>>(new Map());
   const viewRef = useRef({ width, height });
   viewRef.current = { width, height };
+
+  const pinTargetsRef = useRef<ScreenCamera[]>([]);
+  const shownPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const report = (s: BackendStatus) => {
     setStatus(s);
@@ -379,12 +383,49 @@ export function ARScreen({
             distance_m: shown,
           };
         });
-      setOnScreen((prev) =>
-        prev.length === 0 && pins.length === 0 ? prev : pins,
-      );
+      pinTargetsRef.current = pins;
     }, MARKER_UPDATE_MS);
     return () => clearInterval(id);
   }, [ready, useLegacyNearby]);
+
+  // ---- Smoothing: ease drawn marker positions toward their targets every frame ----
+  useEffect(() => {
+    if (!ready) return;
+    let raf = 0;
+    let last = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.min(now - last, 100);
+      last = now;
+      const k = 1 - Math.exp(-dt / PIN_SMOOTH_MS);
+
+      const targets = pinTargetsRef.current;
+      const shown = shownPosRef.current;
+
+      const next = targets.map((p) => {
+        const prev = shown.get(p.key);
+        // A marker that just appeared starts at its target instead of flying in from nowhere.
+        const x = prev ? prev.x + k * (p.x - prev.x) : p.x;
+        const y = prev ? prev.y + k * (p.y - prev.y) : p.y;
+        shown.set(p.key, { x, y });
+        return { ...p, x, y };
+      });
+
+      // Forget markers that left the screen so they start fresh if they come back.
+      if (shown.size > targets.length) {
+        const keys = new Set(targets.map((p) => p.key));
+        for (const key of shown.keys()) {
+          if (!keys.has(key)) shown.delete(key);
+        }
+      }
+
+      setOnScreen((prev) => (prev.length === 0 && next.length === 0 ? prev : next));
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [ready]);
 
   // ---- Fallback (only if the backend has no /cameras/list): ask /cameras/nearby every 0.5 s ----
   useEffect(() => {
@@ -408,7 +449,12 @@ export function ARScreen({
           if (body) {
             const res = await fetchNearbyOnScreen(apiUrl, body);
             if (!stopped) {
-              setOnScreen(res.onScreen);
+              if (!stopped) {
+                pinTargetsRef.current = res.onScreen;
+                setInRange(res.inRange);
+                setNearbyError(null);
+              }
+
               setInRange(res.inRange);
               setNearbyError(null);
             }
@@ -417,7 +463,11 @@ export function ARScreen({
           // Back off after a failure so a slow backend isn't buried under retries.
           waitMs = NEARBY_RETRY_AFTER_FAIL_MS;
           if (!stopped) {
-            setOnScreen([]);
+            if (!stopped) {
+              pinTargetsRef.current = [];
+              setNearbyError(describeError(e));
+            }
+
             setNearbyError(describeError(e));
           }
         }

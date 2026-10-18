@@ -13,7 +13,7 @@ from app.schemas.vision import FlockCamera
 DEFAULT_RADIUS_M = 500
 CACHE_SECONDS = 300
 
-credential_path = os.getenv("DATABASE_CREDENTIALS", "/Users/prestoncrowe/Desktop/Development/FelixDatathon26/backend/felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
+credential_path = os.getenv("DATABASE_CREDENTIALS", "C:\\Users\\fifth\\Downloads\\felixdatathon2026-firebase-adminsdk-fbsvc-c380b80266.json")
 
 if not firebase_admin._apps:
     firebase_admin.initialize_app(credentials.Certificate(credential_path))

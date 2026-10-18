@@ -16,44 +16,55 @@ export function Vignette({
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    let cancelled = false;
+    let pulse: Animated.CompositeAnimation | null = null;
+
+    // Not native-driven on purpose: a native loop leaves the JS-side value stale,
+    // so an interrupting fade-out computes its start frame from the wrong value and
+    // snaps straight to 0. On the JS driver the value stays in sync every frame, so
+    // the fade-out always eases from the glow's real current opacity.
     opacity.stopAnimation();
+
     if (!active) {
       Animated.timing(opacity, {
         toValue: 0,
         duration: 450,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
+        useNativeDriver: false,
       }).start();
-      return;
-    }
-    // Fade in, then pulse between 100% and 55% until the camera leaves the view.
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.55,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    const run = Animated.sequence([
+    } else {
+      // Fade in, then pulse between 100% and 55% until the camera leaves the view.
       Animated.timing(opacity, {
         toValue: 1,
         duration: 450,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      pulse,
-    ]);
-    run.start();
-    return () => run.stop();
+        useNativeDriver: false,
+      }).start(({ finished }) => {
+        if (!finished || cancelled) return;
+        pulse = Animated.loop(
+          Animated.sequence([
+            Animated.timing(opacity, {
+              toValue: 0.55,
+              duration: 900,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: false,
+            }),
+            Animated.timing(opacity, {
+              toValue: 1,
+              duration: 900,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: false,
+            }),
+          ]),
+        );
+        pulse.start();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      pulse?.stop();
+    };
   }, [active, opacity]);
 
   return (
