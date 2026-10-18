@@ -6,9 +6,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 	PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-	python3 python3-venv python3-numpy python3-opencv \
+	python3 python3-venv python3-numpy python3-opencv python3-grpcio \
 	&& rm -rf /var/lib/apt/lists/*
-
+	
 RUN python3 -m venv --system-site-packages /opt/venv
 
 WORKDIR /code

@@ -22,8 +22,6 @@ google-cloud-storage==3.17.1
 google-crc32c==1.9.0
 google-resumable-media==2.11.0
 googleapis-common-protos==1.75.5
-grpcio==1.84.0
-grpcio-status==1.84.0
 h11==0.16.0
 h2==4.4.1
 hpack==4.2.0
@@ -39,7 +37,7 @@ joblib==1.6.0
 MarkupSafe==3.0.4
 msgpack==1.2.3
 numpy==2.5.4
-opencv-python==5.0.0.93
+opencv-python-headless
 opentelemetry-api==1.45.1
 packaging==26.3
 pandas==3.0.6
