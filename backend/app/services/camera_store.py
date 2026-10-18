@@ -37,7 +37,7 @@ def all_cameras() -> list[FlockCamera]:
     with _lock: 
         if time.time() - _cache["loaded_at"] > CACHE_SECONDS:
             cameras = []
-            for doc in _db.collection("flock_cameras").stream():
+            for doc in _db.collection("cameras").stream():
                 try:
                     cameras.append(FlockCamera.model_validate(doc.to_dict()))
                 except ValidationError:

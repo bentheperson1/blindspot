@@ -28,7 +28,7 @@ const DEFAULTS: Settings = {
   appearance: "light",
 };
 
-const KEY = "flock.settings.v1";
+const KEY = "flock.settings.v2";
 
 type Ctx = Settings & {
   update: (patch: Partial<Settings>) => void;
