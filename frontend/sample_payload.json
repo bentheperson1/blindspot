@@ -1,62 +1,36 @@
 {
-  "image": "<base64 JPEG, ~40-80 KB>",
-  "width": 640,
-  "height": 853,
-  "camera_width": 3024,
-  "camera_height": 4032,
-  "ts": 1760731200000,
-  "monotonic_ms": 48213.57,
-  "location": {
-    "latitude": 32.9857,
-    "longitude": -96.7502,
-    "altitude": 190.2,
-    "accuracy": 4.8,
-    "altitudeAccuracy": 3.1,
-    "heading": -1,
-    "speed": 0
-  },
-  "locationTimestamp": 1760731199500,
-  "compass": {
-    "magHeading": 87.4,
-    "trueHeading": 90.9,
-    "accuracy": 3
-  },
-  "motion": {
-    "rotation": {
-      "alpha": 1.52,
-      "beta": 1.31,
-      "gamma": -0.04,
-      "timestamp": 1760731199.9
+  "lat": 32.9857,
+  "long": -96.7502,
+  "gps_accuracy": 4.8,
+  "roll": -1.7,
+  "pitch": 81.2,
+  "yaw": 90.9,
+  "heading_accuracy": 20,
+  "frame": "<base64 JPEG, ~40-80 KB>",
+  "timestamp": 1760731200.123,
+  "extra": {
+    "platform": "ios",
+    "monotonic_ms": 48213.57,
+    "settings": {
+      "radius_m": 1609,
+      "mode": "pedestrian"
     },
-    "rotationRate": {
-      "alpha": 0.8,
-      "beta": -1.2,
-      "gamma": 0.3,
-      "timestamp": 1760731199.9
-    },
-    "acceleration": {
-      "x": 0.01,
-      "y": -0.03,
-      "z": 0.02,
-      "timestamp": 1760731199.9
-    },
-    "accelerationIncludingGravity": {
-      "x": 0.12,
-      "y": -9.6,
-      "z": -1.9,
-      "timestamp": 1760731199.9
-    },
-    "orientation": 0,
-    "interval": 100
+    "width": 640,
+    "height": 853,
+    "camera_width": 3024,
+    "camera_height": 4032,
+    "lens": {
+      "focal_length_mm": 6.1,
+      "focal_length_35mm": 26,
+      "digital_zoom": 1,
+      "lens_model": "iPhone 15 back camera 6.1mm f/1.6",
+      "exif_width": 3024,
+      "exif_height": 4032,
+      "focal_plane_x_res": null,
+      "focal_plane_y_res": null,
+      "focal_plane_res_unit": null,
+      "camera_zoom": 0
+    }
   },
-  "magnetometer": {
-    "x": 21.3,
-    "y": -4.7,
-    "z": -38.2,
-    "timestamp": 1760731199.9
-  },
-  "settings": {
-    "radius_m": 1609,
-    "mode": "pedestrian"
-  }
+  "image": "<same base64 as frame \u2014 sent only while SEND_LEGACY_IMAGE_FIELD is true>"
 }

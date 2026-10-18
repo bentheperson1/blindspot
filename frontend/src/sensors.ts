@@ -34,6 +34,9 @@ export function useTelemetry() {
   const latest = useRef<Telemetry>({ location: null, locationTimestamp: null, compass: null, motion: null, magnetometer: null });
   const [position, setPosition] = useState<LatLng | null>(null);
   const [permission, setPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  // Heading for the compass badge. Updated at most 4×/s and only on a 2° change, so it doesn't re-render constantly.
+  const [heading, setHeading] = useState<number | null>(null);
+  const lastHeading = useRef({ value: -999, at: 0 });
 
   useEffect(() => {
     const subs: { remove: () => void }[] = [];
@@ -55,7 +58,18 @@ export function useTelemetry() {
             },
           ),
         );
-        subs.push(await Location.watchHeadingAsync((h) => (latest.current.compass = h)));
+        subs.push(
+          await Location.watchHeadingAsync((h) => {
+            latest.current.compass = h;
+            const value = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+            const now = Date.now();
+            const diff = Math.abs(((value - lastHeading.current.value + 540) % 360) - 180);
+            if (now - lastHeading.current.at > 250 && diff >= 2) {
+              lastHeading.current = { value, at: now };
+              setHeading(value);
+            }
+          }),
+        );
       }
 
       if (await DeviceMotion.isAvailableAsync()) {
@@ -79,5 +93,5 @@ export function useTelemetry() {
   /** Copy of the latest readings, safe to serialize. */
   const snapshot = (): Telemetry => JSON.parse(JSON.stringify(latest.current));
 
-  return { position, permission, snapshot };
+  return { position, heading, permission, snapshot };
 }

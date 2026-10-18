@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Flock Finder",
-    "slug": "flock-finder",
+    "name": "blindspot",
+    "slug": "blind-spot",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -16,7 +16,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#282B4A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -35,15 +35,25 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Flock Finder uses the camera to show nearby surveillance cameras in AR."
+          "cameraPermission": "Blind Spot uses the camera to spot license-plate cameras.",
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Flock Finder uses your location to find surveillance cameras near you."
+          "locationWhenInUsePermission": "Blind Spot uses your location to find license-plate cameras near you."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
-    ]
+    ],
+    "backgroundColor": "#151627"
   }
 }
