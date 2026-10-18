@@ -28,7 +28,7 @@ import {
 } from "../config";
 import type { Telemetry } from "../sensors";
 import { useSettings } from "../settings";
-import { BORDER, fonts, useThemedStyles, type Palette } from "../theme";
+import { BORDER, fonts, useThemedStyles, withAlpha, type Palette } from "../theme";
 import type { BackendStatus } from "../types";
 
 const PIN_SMOOTH_MS = 65;
@@ -391,12 +391,12 @@ export function ARScreen({
   // What the status strip and bottom text say.
   const offline = status === "error";
   const chip = offline
-    ? { label: "Offline", tone: "surface" as const }
+    ? { label: "Offline", tone: "warning" as const }
     : waitingForSensors
-      ? { label: "Waiting", tone: "surface" as const }
+      ? { label: "Waiting", tone: "neutral" as const }
       : alerting
         ? { label: "In view", tone: "alert" as const }
-        : { label: "Clear", tone: "surface" as const };
+        : { label: "Clear", tone: "success" as const };
   const cardTitle = offline
     ? "No connection"
     : waitingForSensors
@@ -499,7 +499,7 @@ const makeStyles = (c: Palette) =>
       borderRadius: PIN / 2,
       borderWidth: 4,
       borderColor: c.alert,
-      backgroundColor: "rgba(183,25,71,0.18)",
+      backgroundColor: withAlpha(c.alert, 0.18),
     },
     pinLabelWrap: {
       position: "absolute",
@@ -508,23 +508,23 @@ const makeStyles = (c: Palette) =>
       right: -40,
       alignItems: "center",
     },
-    fill: { flex: 1, backgroundColor: "#282B4A" },
+    fill: { flex: 1, backgroundColor: c.scrim },
     center: {
       alignItems: "center",
       justifyContent: "center",
       padding: 24,
       gap: 12,
-      backgroundColor: c.paper,
+      backgroundColor: c.surface,
     },
     permTitle: {
       fontFamily: fonts.heading,
-      color: c.ink,
+      color: c.onSurface,
       fontSize: 22,
       textAlign: "center",
     },
     permBody: {
       fontFamily: fonts.sans,
-      color: c.muted,
+      color: c.onSurfaceVariant,
       fontSize: 15,
       lineHeight: 22,
       textAlign: "center",
@@ -543,32 +543,32 @@ const makeStyles = (c: Palette) =>
       fontFamily: fonts.sans,
       fontSize: 12,
       lineHeight: 16,
-      color: c.muted,
+      color: c.onSurfaceVariant,
     },
     nearbyError: {
       fontFamily: fonts.sans,
       fontSize: 12,
       lineHeight: 16,
-      color: c.alert,
+      color: c.error,
     },
-    infoTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
+    infoTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: c.onSurface },
     bottomCard: {
       position: "absolute",
       left: 0,
       right: 0,
-      backgroundColor: c.paper,
+      backgroundColor: c.surfaceContainerLow,
       borderTopWidth: BORDER,
-      borderTopColor: c.outline,
+      borderTopColor: c.outlineVariant,
       paddingHorizontal: 16,
       paddingTop: 14,
       paddingBottom: 12,
       gap: 8,
     },
-    headline: { fontFamily: fonts.heading, fontSize: 18, color: c.ink },
+    headline: { fontFamily: fonts.heading, fontSize: 18, color: c.onSurface },
     body: {
       fontFamily: fonts.sans,
       fontSize: 14,
       lineHeight: 20,
-      color: c.muted,
+      color: c.onSurfaceVariant,
     },
   });

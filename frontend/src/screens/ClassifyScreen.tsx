@@ -14,7 +14,10 @@ import { Button, Chip, FramedCard, LogoMark } from "../components/ui";
 import { FRAME_JPEG_QUALITY, FRAME_WIDTH_PX } from "../config";
 import type { Telemetry } from "../sensors";
 import { useSettings } from "../settings";
-import { BORDER, fonts, useColors, useThemedStyles, type Palette } from "../theme";
+import { BORDER, fonts, useColors, useThemedStyles, withAlpha, type Palette } from "../theme";
+
+// Text and spinner over the scrim-dimmed photo stay white in both themes.
+const ON_SCRIM = "#FFFFFF";
 
 type Phase = "idle" | "processing" | "done" | "error";
 
@@ -127,6 +130,11 @@ export function ClassifyScreen({
   const verdict = result?.verdict ?? null;
   const isFlock = verdict === "camera";
   const unsure = verdict === "unsure_retake";
+  const badge = isFlock
+    ? { bg: colors.alert, fg: colors.onAlert }
+    : unsure
+      ? { bg: colors.warningContainer, fg: colors.onWarningContainer }
+      : { bg: colors.successContainer, fg: colors.onSuccessContainer };
 
   return (
     <View style={styles.fill}>
@@ -150,7 +158,7 @@ export function ClassifyScreen({
       {/* Dim the photo while the request is in flight. */}
       {phase === "processing" && (
         <View style={styles.processing} pointerEvents="none">
-          <ActivityIndicator size="large" color={colors.onAlert} />
+          <ActivityIndicator size="large" color={ON_SCRIM} />
           <Text style={styles.processingText}>Checking with the server…</Text>
         </View>
       )}
@@ -167,7 +175,15 @@ export function ClassifyScreen({
                   : "Not Flock"
               : "Report"
           }
-          tone={phase === "done" && isFlock ? "alert" : "surface"}
+          tone={
+            phase !== "done"
+              ? "neutral"
+              : isFlock
+                ? "alert"
+                : unsure
+                  ? "warning"
+                  : "success"
+          }
         />
         <Text style={styles.infoTitle}>
           {phase === "idle"
@@ -221,13 +237,13 @@ export function ClassifyScreen({
               <View
                 style={[
                   styles.verdictBadge,
-                  { backgroundColor: isFlock ? colors.alert : colors.surface },
+                  { backgroundColor: badge.bg },
                 ]}
               >
                 <Text
                   style={[
                     styles.verdictMark,
-                    { color: isFlock ? colors.onAlert : colors.muted },
+                    { color: badge.fg },
                   ]}
                 >
                   {isFlock ? "!" : unsure ? "?" : "–"}
@@ -272,23 +288,23 @@ export function ClassifyScreen({
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    fill: { flex: 1, backgroundColor: "#282B4A" },
+    fill: { flex: 1, backgroundColor: c.scrim },
     center: {
       alignItems: "center",
       justifyContent: "center",
       padding: 24,
       gap: 12,
-      backgroundColor: c.paper,
+      backgroundColor: c.surface,
     },
     permTitle: {
       fontFamily: fonts.heading,
-      color: c.ink,
+      color: c.onSurface,
       fontSize: 22,
       textAlign: "center",
     },
     permBody: {
       fontFamily: fonts.sans,
-      color: c.muted,
+      color: c.onSurfaceVariant,
       fontSize: 15,
       lineHeight: 22,
       textAlign: "center",
@@ -303,13 +319,13 @@ const makeStyles = (c: Palette) =>
       bottom: 0,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "rgba(40,43,74,0.45)",
+      backgroundColor: withAlpha(c.scrim, 0.45),
       gap: 12,
     },
     processingText: {
       fontFamily: fonts.sansBold,
       fontSize: 15,
-      color: c.onAlert,
+      color: ON_SCRIM,
     },
     infoCard: {
       position: "absolute",
@@ -319,15 +335,15 @@ const makeStyles = (c: Palette) =>
       gap: 6,
       maxWidth: 250,
     },
-    infoTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
+    infoTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: c.onSurface },
     bottomCard: {
       position: "absolute",
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: c.paper,
+      backgroundColor: c.surfaceContainerLow,
       borderTopWidth: BORDER,
-      borderTopColor: c.outline,
+      borderTopColor: c.outlineVariant,
       paddingHorizontal: 16,
       paddingTop: 16,
       gap: 12,
@@ -336,20 +352,20 @@ const makeStyles = (c: Palette) =>
     headline: {
       fontFamily: fonts.heading,
       fontSize: 18,
-      color: c.ink,
+      color: c.onSurface,
       alignSelf: "stretch",
     },
     body: {
       fontFamily: fonts.sans,
       fontSize: 14,
       lineHeight: 20,
-      color: c.muted,
+      color: c.onSurfaceVariant,
       alignSelf: "stretch",
     },
     foot: {
       fontFamily: fonts.sans,
       fontSize: 12,
-      color: c.muted,
+      color: c.onSurfaceVariant,
       alignSelf: "stretch",
     },
     verdictRow: {
@@ -362,8 +378,6 @@ const makeStyles = (c: Palette) =>
       width: 48,
       height: 48,
       borderRadius: 24,
-      borderWidth: BORDER,
-      borderColor: c.outline,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -371,7 +385,7 @@ const makeStyles = (c: Palette) =>
     verdictSub: {
       fontFamily: fonts.sansBold,
       fontSize: 13,
-      color: c.muted,
+      color: c.onSurfaceVariant,
       marginTop: 2,
     },
     shutter: {
@@ -380,7 +394,7 @@ const makeStyles = (c: Palette) =>
       borderRadius: 37,
       borderWidth: 4,
       borderColor: c.alert,
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerLowest,
       alignItems: "center",
       justifyContent: "center",
     },

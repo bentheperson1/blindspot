@@ -61,9 +61,9 @@ export const RadiusSlider = memo(function RadiusSlider() {
         onSlidingStart={onStart}
         onValueChange={onChange}
         onSlidingComplete={onComplete}
-        minimumTrackTintColor={colors.alert}
-        maximumTrackTintColor={colors.outline}
-        thumbTintColor={colors.alert}
+        minimumTrackTintColor={colors.primary}
+        maximumTrackTintColor={colors.outlineVariant}
+        thumbTintColor={colors.primary}
         accessibilityLabel="Search radius"
       />
       <View style={styles.row}>
@@ -81,8 +81,8 @@ const makeStyles = (c: Palette) =>
       justifyContent: "space-between",
       alignItems: "baseline",
     },
-    label: { fontFamily: fonts.sansBold, fontSize: 14, color: c.ink },
-    value: { fontFamily: fonts.sansBold, fontSize: 16, color: c.ink },
+    label: { fontFamily: fonts.sansBold, fontSize: 14, color: c.onSurface },
+    value: { fontFamily: fonts.sansBold, fontSize: 16, color: c.onSurface },
     slider: { height: 34 },
-    tick: { fontFamily: fonts.sans, fontSize: 12, color: c.muted },
+    tick: { fontFamily: fonts.sans, fontSize: 12, color: c.onSurfaceVariant },
   });

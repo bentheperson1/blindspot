@@ -3,110 +3,164 @@ import { useColorScheme } from "react-native";
 import { useSettings } from "./settings";
 
 /**
- * Blind Spot palette. Every color is one of the three brand colors or a tint/shade of one:
- *   #282B4A midnight indigo -> text and primary buttons (light) / ground (dark)
- *   #EEEBDA vanilla cream   -> ground (light) / text and primary buttons (dark)
- *   #B71947 logo red        -> small highlights only: "in view", selected controls, search radius,
- *                              slider thumb, sheet handle, section labels, serif accent words
- * Two extra signal colors exist only for the snapshot verdict: `clear` (green, "not a camera")
- * and `caution` (amber, "not sure").
- * Layout is deliberately plain: flat cards, thin borders, one sans font, labeled controls.
+ * Material 3 color scheme. Generated with Google's material-color-utilities (`SchemeFidelity`,
+ * contrast 0) from the brand indigo #282B4A: near-black indigo ink, cool near-neutral grays, and
+ * the indigo itself on `primaryContainer`. Roles follow https://m3.material.io/styles/color/roles:
+ *   surface / surfaceContainer*  -> page ground, then cards, sheets, nav bar in rising emphasis
+ *   onSurface / onSurfaceVariant -> primary / secondary text and icons
+ *   outline                      -> borders on interactive things (buttons, inputs, chips)
+ *   outlineVariant               -> decorative borders and dividers (cards, sheets, nav bar)
+ *   alert                        -> custom color: the logo red #B71947, unblended, used only for
+ *                                   "camera in view" so it is the one saturated thing on screen
+ *   success / warning            -> custom colors for the snapshot verdict, harmonized to the seed
+ * Don't hand-pick hex values elsewhere; pick the role. Use `withAlpha` for translucent fills.
  */
 export type Palette = {
   scheme: "dark" | "light";
-  paper: string; // page ground
-  grid: string; // graph-paper lines
-  surface: string; // white cards, icon buttons
-  cream: string; // secondary buttons, framed cards
-  ink: string; // primary text
-  outline: string; // borders on buttons, cards, chips (neutral gray)
-  shadow: string; // hard offset shadow under primary buttons
-  muted: string; // secondary text
-  divider: string;
-  tan: string; // dashed inner outlines (blue tint)
-  primary: string; // main action buttons
+  primary: string;
   onPrimary: string;
-  alert: string; // "in view" (blue)
+  primaryContainer: string;
+  onPrimaryContainer: string;
+  secondary: string;
+  onSecondary: string;
+  secondaryContainer: string;
+  onSecondaryContainer: string;
+  tertiary: string;
+  onTertiary: string;
+  tertiaryContainer: string;
+  onTertiaryContainer: string;
+  alert: string;
   onAlert: string;
-  clear: string; // snapshot verdict "not a camera" (green)
-  onClear: string;
-  caution: string; // snapshot verdict "not sure" (amber)
-  onCaution: string;
-  peach: string; // tinted tiles
-  sage: string; // "clear" tiles and chips (green)
-  lilac: string;
-  accentText: string; // blue for serif accent words, dark enough to read on the ground
-  crimson: string; // crimson detail lines (search radius, handles, labels)
-  mapTint: string;
-  radiusFill: string;
-  radiusStroke: string;
-  cone: string;
-  coneStroke: string;
+  error: string;
+  onError: string;
+  errorContainer: string;
+  onErrorContainer: string;
+  success: string;
+  onSuccess: string;
+  successContainer: string;
+  onSuccessContainer: string;
+  warning: string;
+  onWarning: string;
+  warningContainer: string;
+  onWarningContainer: string;
+  surface: string;
+  surfaceDim: string;
+  surfaceBright: string;
+  surfaceContainerLowest: string;
+  surfaceContainerLow: string;
+  surfaceContainer: string;
+  surfaceContainerHigh: string;
+  surfaceContainerHighest: string;
+  onSurface: string;
+  onSurfaceVariant: string;
+  outline: string;
+  outlineVariant: string;
+  inverseSurface: string;
+  inverseOnSurface: string;
+  inversePrimary: string;
+  scrim: string;
+  shadow: string;
 };
 
 const light: Palette = {
   scheme: "light",
-  paper: "#EEEBDA", // vanilla cream
-  grid: "#E0DED0", // cream, 7% toward indigo
-  surface: "#F8F7F0", // cream, 60% tint
-  cream: "#F4F2E7", // cream, 35% tint
-  ink: "#282B4A", // midnight indigo
-  outline: "#8B8B92", // indigo, halfway to cream
-  shadow: "#282B4A",
-  muted: "#636575", // indigo, 30% toward cream
-  divider: "#D0CEC4", // cream, 15% toward indigo
-  tan: "#A9A8A8", // indigo, 65% toward cream
-  primary: "#282B4A",
-  onPrimary: "#EEEBDA",
-  alert: "#B71947", // logo red
-  onAlert: "#EEEBDA",
-  clear: "#2F6B47",
-  onClear: "#EEEBDA",
-  caution: "#D9961A",
-  onCaution: "#282B4A",
-  peach: "#D6D4C9", // cream, 12% toward indigo
-  sage: "#C2C1BA", // cream, 22% toward indigo
-  lilac: "#E4C5C0", // logo red, 82% toward cream
-  accentText: "#282B4A",
-  crimson: "#B71947",
-  mapTint: "rgba(238,235,218,0.22)",
-  radiusFill: "rgba(183,25,71,0.08)",
-  radiusStroke: "#B71947",
-  cone: "rgba(40,43,74,0.22)",
-  coneStroke: "#282B4A",
+  primary: "#131634",
+  onPrimary: "#FFFFFF",
+  primaryContainer: "#282B4A",
+  onPrimaryContainer: "#9092B7",
+  secondary: "#5D5D6C",
+  onSecondary: "#FFFFFF",
+  secondaryContainer: "#E2E1F3",
+  onSecondaryContainer: "#636372",
+  tertiary: "#6C5D2F",
+  onTertiary: "#FFFFFF",
+  tertiaryContainer: "#BDAA74",
+  onTertiaryContainer: "#4B3E13",
+  alert: "#B71947", // logo red, fixed in both themes
+  onAlert: "#FFFFFF",
+  error: "#BA1A1A",
+  onError: "#FFFFFF",
+  errorContainer: "#FFDAD6",
+  onErrorContainer: "#93000A",
+  success: "#006B54",
+  onSuccess: "#FFFFFF",
+  successContainer: "#80F8D1",
+  onSuccessContainer: "#002117",
+  warning: "#8D4F00",
+  onWarning: "#FFFFFF",
+  warningContainer: "#FFDCC0",
+  onWarningContainer: "#2E1600",
+  surface: "#FCF8FB",
+  surfaceDim: "#DCD9DC",
+  surfaceBright: "#FCF8FB",
+  surfaceContainerLowest: "#FFFFFF",
+  surfaceContainerLow: "#F6F2F6",
+  surfaceContainer: "#F0EDF0",
+  surfaceContainerHigh: "#EAE7EA",
+  surfaceContainerHighest: "#E5E1E5",
+  onSurface: "#1C1B1E",
+  onSurfaceVariant: "#46464E",
+  outline: "#77767E",
+  outlineVariant: "#C7C5CE",
+  inverseSurface: "#313033",
+  inverseOnSurface: "#F3F0F3",
+  inversePrimary: "#C2C4EB",
+  scrim: "#000000",
+  shadow: "#000000",
 };
 
 const dark: Palette = {
   scheme: "dark",
-  paper: "#282B4A", // midnight indigo
-  grid: "#343753", // indigo, 6% toward cream
-  surface: "#3E405A", // indigo, 11% toward cream
-  cream: "#323551", // indigo, 5% toward cream
-  ink: "#EEEBDA", // vanilla cream
-  outline: "#6D6E7C", // indigo, 35% toward cream
-  shadow: "#141625", // indigo, 50% shade
-  muted: "#B3B1AF", // indigo, 70% toward cream
-  divider: "#464860", // indigo, 15% toward cream
-  tan: "#5A5B6E", // indigo, 25% toward cream
-  primary: "#EEEBDA",
-  onPrimary: "#282B4A",
-  alert: "#B71947", // logo red
-  onAlert: "#EEEBDA",
-  clear: "#3B8A5C",
-  onClear: "#EEEBDA",
-  caution: "#E0A030",
-  onCaution: "#282B4A",
-  peach: "#4A4C62", // indigo, 17% toward cream
-  sage: "#5F6172", // indigo, 28% toward cream
-  lilac: "#772148", // indigo, 55% toward logo red
-  accentText: "#EEEBDA",
-  crimson: "#B71947",
-  mapTint: "rgba(40,43,74,0.32)",
-  radiusFill: "rgba(183,25,71,0.14)",
-  radiusStroke: "#B71947",
-  cone: "rgba(238,235,218,0.20)",
-  coneStroke: "#EEEBDA",
+  primary: "#C2C4EB",
+  onPrimary: "#2B2E4D",
+  primaryContainer: "#282B4A",
+  onPrimaryContainer: "#9092B7",
+  secondary: "#C6C5D6",
+  onSecondary: "#2F2F3D",
+  secondaryContainer: "#474856",
+  onSecondaryContainer: "#B8B7C8",
+  tertiary: "#D9C58D",
+  onTertiary: "#3B2F05",
+  tertiaryContainer: "#BDAA74",
+  onTertiaryContainer: "#4B3E13",
+  alert: "#B71947", // logo red, fixed in both themes
+  onAlert: "#FFFFFF",
+  error: "#FFB4AB",
+  onError: "#690005",
+  errorContainer: "#93000A",
+  onErrorContainer: "#FFDAD6",
+  success: "#62DBB6",
+  onSuccess: "#00382A",
+  successContainer: "#00513E",
+  onSuccessContainer: "#80F8D1",
+  warning: "#FFB877",
+  onWarning: "#4B2700",
+  warningContainer: "#6C3A00",
+  onWarningContainer: "#FFDCC0",
+  surface: "#131315",
+  surfaceDim: "#131315",
+  surfaceBright: "#39393B",
+  surfaceContainerLowest: "#0E0E10",
+  surfaceContainerLow: "#1C1B1E",
+  surfaceContainer: "#201F22",
+  surfaceContainerHigh: "#2A2A2C",
+  surfaceContainerHighest: "#353437",
+  onSurface: "#E5E1E5",
+  onSurfaceVariant: "#C7C5CE",
+  outline: "#919098",
+  outlineVariant: "#46464E",
+  inverseSurface: "#E5E1E5",
+  inverseOnSurface: "#313033",
+  inversePrimary: "#595C7E",
+  scrim: "#000000",
+  shadow: "#000000",
 };
+
+/** `#RRGGBB` + opacity -> `rgba(...)`, for scrims, map overlays and other translucent fills. */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
 
 export const fonts = {
   // One plain sans everywhere (Archivo), like the logo's lettering. No serif or display faces.

@@ -26,13 +26,6 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
     }, 400);
   };
 
-  const credits = [
-    { name: 'Preston Crow', role: "Backend developer" },
-    { name: 'Amna Ashraf', role: "Data scientist" },
-    { name: 'Adya D', role: "Frontend developer" },
-    { name: 'Ben Holland', role: "Backend developer" },
-    { name: 'Jacob' , role: "Data scientist" }
-  ];
 
   return (
     <View style={styles.screen}>
@@ -104,22 +97,10 @@ export function SettingsScreen({ bottomInset }: { bottomInset: number }) {
                 autoCorrect={false}
                 keyboardType="url"
                 placeholder="http://192.168.1.20:8000"
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={colors.onSurfaceVariant}
                 accessibilityLabel="Server address"
               />
             </Group>
-
-            <Group label="App Credits" note="This app was built in 24 hours for the 2026 IBM Z Datathon by a team of students from The University of Texas at Dallas.">
-              <View style={styles.credits_list}>
-                {credits.map((item) => (
-                  <Text key={item.name}>
-                    <Text style={styles.credits_name}>{item.name}</Text>
-                    <Text style={styles.credits_role}> - {item.role}</Text>
-                  </Text>
-                ))}
-              </View>
-            </Group>
-
           </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -172,36 +153,26 @@ function Choice<T extends string>({
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    credits_list: {
-      gap: 12,
-    },
-    credits_name: {
-      color: c.ink,
-      fontWeight: 'bold',
-    },
-    credits_role: {
-      color: c.muted,
-    },
-    screen: { flex: 1, backgroundColor: c.paper },
+    screen: { flex: 1, backgroundColor: c.surface },
     header: {
       paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 12,
       borderBottomWidth: BORDER,
-      borderBottomColor: c.outline,
+      borderBottomColor: c.outlineVariant,
     },
-    title: { fontFamily: fonts.heading, fontSize: 24, color: c.ink },
+    title: { fontFamily: fonts.heading, fontSize: 24, color: c.onSurface },
     body: { padding: 16, gap: 20 },
     group: { gap: 6 },
-    groupLabel: { fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 0.6, color: c.muted, textTransform: 'uppercase' },
+    groupLabel: { fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 0.6, color: c.primary, textTransform: 'uppercase' },
     card: {
-      backgroundColor: c.surface,
+      backgroundColor: c.surfaceContainerLow,
       borderRadius: radii.card,
       padding: 12,
       borderWidth: BORDER,
-      borderColor: c.outline,
+      borderColor: c.outlineVariant,
     },
-    note: { fontFamily: fonts.sans, fontSize: 13, color: c.muted, lineHeight: 18 },
+    note: { fontFamily: fonts.sans, fontSize: 13, color: c.onSurfaceVariant, lineHeight: 18 },
     choice: { flexDirection: 'row', gap: 8 },
     choiceItem: {
       flex: 1,
@@ -212,14 +183,14 @@ const makeStyles = (c: Palette) =>
       borderRadius: radii.icon,
       borderWidth: BORDER,
       borderColor: c.outline,
-      backgroundColor: c.paper,
+      backgroundColor: 'transparent',
     },
-    choiceOn: { backgroundColor: c.primary, borderColor: c.primary },
-    choiceText: { fontFamily: fonts.sansSemi, fontSize: 14, color: c.ink },
-    choiceTextOn: { fontFamily: fonts.sansBold, color: c.onPrimary },
+    choiceOn: { backgroundColor: c.secondaryContainer, borderColor: c.outline },
+    choiceText: { fontFamily: fonts.sansSemi, fontSize: 14, color: c.onSurface },
+    choiceTextOn: { fontFamily: fonts.sansBold, color: c.onSecondaryContainer },
     input: {
-      backgroundColor: c.paper,
-      color: c.ink,
+      backgroundColor: 'transparent',
+      color: c.onSurface,
       fontFamily: fonts.sans,
       borderRadius: radii.icon,
       paddingHorizontal: 12,
