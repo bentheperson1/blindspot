@@ -276,6 +276,7 @@ export function ARScreen({
     pausedRef.current = true;
     setSnap({ phase: "checking", uri: null });
     let uri: string;
+    let base64: string;
     try {
       await captureRef.current?.catch(() => {});
       const shot = await camRef.current?.takePictureAsync({
@@ -289,8 +290,11 @@ export function ARScreen({
       const photo = await img.saveAsync({
         compress: FRAME_JPEG_QUALITY,
         format: SaveFormat.JPEG,
+        base64: true,
       });
+      if (!photo.base64) throw new Error("no base64");
       uri = photo.uri;
+      base64 = photo.base64;
     } catch {
       setSnap({
         phase: "error",
@@ -304,14 +308,15 @@ export function ARScreen({
       setSnap({
         phase: "result",
         uri,
-        result: await classifyPhoto(apiUrl, uri),
+        result: await classifyPhoto(apiUrl, base64),
       });
-    } catch {
+    } catch (e) {
+      const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      console.log("[snapshot] /classify failed", `${apiUrl}/classify-base64`, detail);
       setSnap({
         phase: "error",
         uri,
-        message:
-          "Couldn't reach the detector. Check Server address in Settings.",
+        message: `Couldn't reach the detector (${detail}) at ${apiUrl}/classify-base64`,
       });
     }
   };

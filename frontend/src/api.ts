@@ -60,6 +60,7 @@ type UserMessageFields = {
 export const PATHS = {
   frame: '/images/process-base64',
   classify: '/classify', // backend: app/api/routes/classify.py, multipart field "file"
+  classifyBase64: '/classify-base64', // backend: same file, JSON { image: <base64> } (used by the app)
   health: '/health',
   cameras: '/cameras',
   nearby: '/cameras/nearby', // backend: app/api/routes/cameras.py -> nearby(info: LocationInputInfo)
@@ -209,17 +210,17 @@ export type ClassifyResult = {
 
 export const CLASSIFY_TIMEOUT_MS = 15000;
 
-/** Uploads one JPEG (a local file uri) to POST /classify as multipart form-data and returns the verdict. */
-export async function classifyPhoto(apiUrl: string, uri: string): Promise<ClassifyResult> {
-  const form = new FormData();
-  if (Platform.OS === 'web') {
-    form.append('file', await (await fetch(uri)).blob(), 'photo.jpg');
-  } else {
-    // React Native's FormData takes a { uri, name, type } file reference instead of a Blob.
-    form.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' } as unknown as Blob);
-  }
-  // No Content-Type header: fetch sets multipart/form-data with the boundary itself.
-  const res = await request(`${base(apiUrl)}${PATHS.classify}`, { method: 'POST', body: form }, CLASSIFY_TIMEOUT_MS);
+/**
+ * Sends one JPEG (base64, no data: prefix) to POST /classify-base64 as JSON and returns the verdict.
+ * JSON instead of multipart: Expo's fetch rejects React Native's { uri, name, type } FormData
+ * parts ("Unsupported FormDataPart implementation"), while JSON bodies already work for the frame loop.
+ */
+export async function classifyPhoto(apiUrl: string, base64: string): Promise<ClassifyResult> {
+  const res = await request(
+    `${base(apiUrl)}${PATHS.classifyBase64}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: base64 }) },
+    CLASSIFY_TIMEOUT_MS,
+  );
   const json = (await res.json()) as Record<string, unknown>;
   const verdict = json.verdict;
   // The backend sends the probability as `probability`; accept `camera_probability` too (model/predict.py's name).
