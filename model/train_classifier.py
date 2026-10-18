@@ -72,13 +72,15 @@ def hog_features(img, size=128, cell=8, bins=9):
 # Uses Hugging Face transformers (no torchvision needed), which is preinstalled with
 # PyTorch in IBM's LinuxONE Jupyter Lab ML image (registry.linuxone.cloud.marist.edu/
 # l1cc/jupyterlab-image-s390x). Weights (~600 MB) download on first use.
-CLIP_MODEL = "openai/clip-vit-base-patch32"
+# safetensors weights: the older pytorch_model.bin format segfaults when loaded on
+# big-endian s390x, while safetensors stores byte order explicitly.
+CLIP_MODEL = "laion/CLIP-ViT-B-32-laion2B-s34B-b79K"
 
 
 def load_clip():
     from transformers import CLIPImageProcessor, CLIPModel
     processor = CLIPImageProcessor.from_pretrained(CLIP_MODEL)
-    model = CLIPModel.from_pretrained(CLIP_MODEL).eval()
+    model = CLIPModel.from_pretrained(CLIP_MODEL, use_safetensors=True).eval()
     return model, processor
 
 
